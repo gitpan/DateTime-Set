@@ -23,9 +23,10 @@ sub set_time_zone {
 
     my $result = $self->{set}->iterate( 
         sub {
-            $_[0]{list}[0]{a}->set_time_zone( $tz ) if ref $_[0]{list}[0]{a};
-            $_[0]{list}[0]{b}->set_time_zone( $tz ) if ref $_[0]{list}[0]{b};
-            $_[0];
+            my %tmp = %{ $_[0]->{list}[0] };
+            $tmp{a} = $tmp{a}->clone->set_time_zone( $tz ) if ref $tmp{a};
+            $tmp{b} = $tmp{b}->clone->set_time_zone( $tz ) if ref $tmp{b};
+            \%tmp;
         }
     );
 
@@ -133,6 +134,22 @@ sub next {
     return $return;
 }
 
+# previous() gets the last element from an iterator()
+sub previous {
+    my ($self) = shift;
+
+    return undef unless defined $self->{set};
+
+    my ($head, $tail) = $self->{set}->last;
+    $self->{set} = $tail;
+    return $head unless ref $head;
+    my $return = {
+        set => $head,
+    };
+    bless $return, 'DateTime::Span';
+    return $return;
+}
+
 # Set::Infinite methods
 
 sub intersection {
@@ -204,10 +221,6 @@ sub span {
 # returns a DateTime::Duration
 sub duration { my $dur = $_[0]->{set}->size; defined $dur ? $dur : INFINITY }
 *size = \&duration;
-
-# unsupported Set::Infinite methods
-# sub offset { die "offset() not supported"; }
-# sub quantize { die "quantize() not supported"; }
 
 1;
 
@@ -348,7 +361,7 @@ These set functions return a boolean value.
 These methods can accept a C<DateTime>, C<DateTime::Set>,
 C<DateTime::Span>, or C<DateTime::SpanSet> object as an argument.
 
-=item * iterator / next
+=item * iterator / next / previous
 
 This method can be used to iterate over the spans in a set.
 
@@ -370,8 +383,8 @@ Obviously, if the span you specify does is not restricted both at the
 start and end, then your iterator may iterate forever, depending on
 the nature of your set.  User beware!
 
-The C<next()> method will return C<undef> when there are no more
-datetimes in the iterator.
+The C<next()> or C<previous()> methods will return C<undef> 
+when there are no more spans in the iterator.
 
 =back
 
