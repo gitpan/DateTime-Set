@@ -30,8 +30,6 @@ sub from_spans {
     return $self;
 }
 
-*new = \&from_spans;
-
 sub from_set_and_duration {
     # die "from_set_and_duration() not implemented yet";
     # set => $dt_set, days => 1
@@ -77,11 +75,19 @@ sub clone {
         }, ref $_[0];
 }
 
-# iterator() doesn't do much yet.
-# This might change as the API gets more complex.
+
 sub iterator {
-    return $_[0]->clone;
+    my $self = shift;
+
+    my %args = @_;
+    my $span;
+    $span = delete $args{span};
+    $span = DateTime::Span->new( %args ) if %args;
+
+    return $self->intersection( $span ) if $span;
+    return $self->clone;
 }
+
 
 # next() gets the next element from an iterator()
 sub next {
@@ -106,7 +112,7 @@ sub next {
 sub intersection {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
-    my $tmp = $class->new();
+    my $tmp = $class->empty_set();
     $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
     $tmp->{set} = $set1->{set}->intersection( $set2->{set} );
     return $tmp;
@@ -115,7 +121,7 @@ sub intersection {
 sub intersects {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
-    my $tmp = $class->new();
+    my $tmp = $class->empty_set();
     $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
     return $set1->{set}->intersects( $set2->{set} );
 }
@@ -123,7 +129,7 @@ sub intersects {
 sub contains {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
-    my $tmp = $class->new();
+    my $tmp = $class->empty_set();
     $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
     return $set1->{set}->contains( $set2->{set} );
 }
@@ -131,7 +137,7 @@ sub contains {
 sub union {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
-    my $tmp = $class->new();
+    my $tmp = $class->empty_set();
     $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
     $tmp->{set} = $set1->{set}->union( $set2->{set} );
     return $tmp;
@@ -140,7 +146,7 @@ sub union {
 sub complement {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
-    my $tmp = $class->new();
+    my $tmp = $class->empty_set();
     if (defined $set2) {
         $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
         $tmp->{set} = $set1->{set}->complement( $set2->{set} );
@@ -188,21 +194,21 @@ DateTime::SpanSet - set of DateTime spans
 
 =head1 SYNOPSIS
 
-    $set1 = DateTime::SpanSet->from_spans( spans => [ $dt_span, $dt_span ] );
+    $spanset = DateTime::SpanSet->from_spans( spans => [ $dt_span, $dt_span ] );
 
-    $set = $set1->union( $set2 );         # like "OR", "insert", "both"
-    $set = $set1->complement( $set2 );    # like "delete", "remove"
-    $set = $set1->intersection( $set2 );  # like "AND", "while"
-    $set = $set1->complement;             # like "NOT", "negate", "invert"
+    $set = $spanset->union( $set2 );         # like "OR", "insert", "both"
+    $set = $spanset->complement( $set2 );    # like "delete", "remove"
+    $set = $spanset->intersection( $set2 );  # like "AND", "while"
+    $set = $spanset->complement;             # like "NOT", "negate", "invert"
 
-    if ( $set1->intersects( $set2 ) ) { ...  # like "touches", "interferes"
-    if ( $set1->contains( $set2 ) ) { ...    # like "is-fully-inside"
+    if ( $spanset->intersects( $set2 ) ) { ...  # like "touches", "interferes"
+    if ( $spanset->contains( $set2 ) ) { ...    # like "is-fully-inside"
 
     # data extraction 
-    $date = $set1->min;           # first date of the set
-    $date = $set1->max;           # last date of the set
+    $date = $spanset->min;           # first date of the set
+    $date = $spanset->max;           # last date of the set
 
-    $iter = $set1->iterator;
+    $iter = $spanset->iterator;
     while ( $dt = $iter->next ) {
         # $dt is a DateTime::Span
         print $dt->start->ymd;   # first date of span
@@ -223,7 +229,7 @@ every Friday.
 
 Creates a new span set from one or more C<DateTime::Span> objects.
 
-   $dates = DateTime::SpanSet->from_spans( spans => [ $dt_span ] );
+   $spanset = DateTime::SpanSet->from_spans( spans => [ $dt_span ] );
 
 =item * from_set_and_duration
 
@@ -234,7 +240,9 @@ The duration can be a C<DateTime::Duration> object, or the parameters
 to create a new C<DateTime::Duration> object, such as "days",
 "months", etc.
 
-   $dates = DateTime::SpanSet->from_set_and_duration( set => $dt_set, days => 1 );
+   $spanset =
+       DateTime::SpanSet->from_set_and_duration
+           ( set => $dt_set, days => 1 );
 
 =item * from_sets
 
@@ -243,7 +251,9 @@ Creates a new span set from two C<DateTime::Set> objects.
 One set defines the I<starting dates>, and the other defines the I<end
 dates>.
 
-   $dates = DateTime::SpanSet->from_sets( start_set => $dt_set1, end_set => $dt_set2 );
+   $spanset =
+       DateTime::SpanSet->from_sets
+           ( start_set => $dt_set1, end_set => $dt_set2 );
 
 The spans have the starting date C<closed>, and the end date C<open>,
 like in C<[$dt1, $dt2)>.
@@ -278,36 +288,49 @@ The total span of the set, as a C<DateTime::Span> object.
 =item * union / intersection / complement
 
 Set operations may be performed not only with C<DateTime::SpanSet>
-objects, but also with C<DateTime::Set> and C<DateTime::Span> objects.
-These set operations always return a C<DateTime::SpanSet> object.
+objects, but also with C<DateTime>, C<DateTime::Set> and
+C<DateTime::Span> objects.  These set operations always return a
+C<DateTime::SpanSet> object.
 
-    $set = $set1->union( $set2 );         # like "OR", "insert", "both"
-    $set = $set1->complement( $set2 );    # like "delete", "remove"
-    $set = $set1->intersection( $set2 );  # like "AND", "while"
-    $set = $set1->complement;             # like "NOT", "negate", "invert"
+    $set = $spanset->union( $set2 );         # like "OR", "insert", "both"
+    $set = $spanset->complement( $set2 );    # like "delete", "remove"
+    $set = $spanset->intersection( $set2 );  # like "AND", "while"
+    $set = $spanset->complement;             # like "NOT", "negate", "invert"
 
 =item intersects / contains
 
 These set functions return a boolean value.
 
-    if ( $set1->intersects( $set2 ) ) { ...  # like "touches", "interferes"
-    if ( $set1->contains( $set2 ) ) { ...    # like "is-fully-inside"
+    if ( $spanset->intersects( $set2 ) ) { ...  # like "touches", "interferes"
+    if ( $spanset->contains( $dt ) ) { ...    # like "is-fully-inside"
+
+These methods can accept a C<DateTime>, C<DateTime::Set>,
+C<DateTime::Span>, or C<DateTime::SpanSet> object as an argument.
 
 =item * iterator / next
 
-This method can be used to iterate over the date-spans in a set.
+This method can be used to iterate over the spans in a set.
 
-    $iter = $set1->iterator;
+    $iter = $spanset->iterator;
     while ( $dt = $iter->next ) {
         # $dt is a DateTime::Span
         print $dt->min->ymd;   # first date of span
         print $dt->max->ymd;   # last date of span
     }
 
-The C<next()> returns C<undef> when there are no more spans in the
-iterator.  Obviously, if a span set is specified as a recurrence and
-has no fixed end, then it may never stop returning spans.  User
-beware!
+The boundaries of the iterator can be limited by passing it a C<span>
+parameter.  This should be a C<DateTime::Span> object which delimits
+the iterator's boundaries.  Optionally, instead of passing an object,
+you can pass any parameters that would work for one of the
+C<DateTime::Span> class's constructors, and an object will be created
+for you.
+
+Obviously, if the span you specify does is not restricted both at the
+start and end, then your iterator may iterate forever, depending on
+the nature of your set.  User beware!
+
+The C<next()> method will return C<undef> when there are no more
+datetimes in the iterator.
 
 =head1 SUPPORT
 

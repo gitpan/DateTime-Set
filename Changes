@@ -1,8 +1,13 @@
 Changes for DateTime::Set
 
-0.03     2003-04-23
-- fix a hardcoded '-inf' in t/09spanset.t.  Eric Cholet
-- requires DateTime.pm 0.09.  Eric Cholet
+0.04
+- change "closest" code to avoid duration comparison
+
+0.03     2003-04-27
+- fixes in Set.pm as_list, span.
+- iterator accepts 'span' parameters.  Ben Bennett
+- remove deprecated DateTime::Set->new and DateTime::SpanSet->new.  Dave Rolsky
+- requires Set::Infinite 0.49
 
 0.02     2003-04-20
 - removed some calls to 'new'

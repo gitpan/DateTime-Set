@@ -8,12 +8,12 @@ use strict;
 use Carp;
 use Params::Validate qw( validate SCALAR BOOLEAN OBJECT CODEREF ARRAYREF );
 use DateTime::Span;
-use Set::Infinite 0.45;   # 0.44_04 would be ok, but it is a devel version
+use Set::Infinite 0.49;  
 $Set::Infinite::PRETTY_PRINT = 1;   # enable Set::Infinite debug
 
 use vars qw( $VERSION );
 
-$VERSION = '0.03';
+$VERSION = '0.04';
 
 use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
@@ -67,12 +67,6 @@ sub add_duration {
 # note: the constructors must clone its DateTime parameters, such that
 # the set elements become immutable
 
-sub new {
-    my $class = shift;
-    carp "new is deprecated" if @_;
-    $class->empty_set;
-}
-
 sub from_recurrence {
     my $class = shift;
     # note: not using validate() because this is too complex...
@@ -85,7 +79,7 @@ sub from_recurrence {
     $param{previous} = $args{previous}  and  delete $args{previous};
     $param{span} = $args{span}  and  delete $args{span};
     # they might be specifying a span using begin / end
-    $param{span} = new DateTime::Span( %args ) if keys %args;
+    $param{span} = DateTime::Span->new( %args ) if keys %args;
     # otherwise, it is unbounded
     $param{span}->{set} = Set::Infinite->new( NEG_INFINITY, INFINITY )
         unless exists $param{span}->{set};
@@ -93,6 +87,7 @@ sub from_recurrence {
     if ($param{next} || $param{previous}) {
         $self->{next} = $param{next} if $param{next};
         $self->{previous} = $param{previous} if $param{previous};
+        $self->{span} = $param{span} if $param{span};
 
         $self->{set} = _recurrence_callback( 
             $param{span}->{set}, $param{next}, $param{previous} );
@@ -203,7 +198,8 @@ sub _setup_infinite_recurrence {
     # because Set::Infinite has no hint of how to do it.
     if ($set->min == INFINITY || $set->min == NEG_INFINITY) {
         # warn "RECURR: start in ".$set->min;
-        $func->{first} = [ $set->new( $set->min ), $set ];
+        # added: $func->copy to make it recursive
+        $func->{first} = [ $set->new( $set->min ), $func->copy ];
     }
     else {
         my $min = $func->min;
@@ -224,7 +220,8 @@ sub _setup_infinite_recurrence {
     # Now are setting up the last() cache directly
     if ($set->max == INFINITY || $set->max == NEG_INFINITY) {
         # warn "RECURR: end in ".$set->max;
-        $func->{last} = [ $set->new( $set->max ), $set ];
+        # added: $func->copy to make it recursive
+        $func->{last} = [ $set->new( $set->max ), $func->copy ];
     }
     else {
         my $max = $func->max;
@@ -330,11 +327,19 @@ sub _callback_previous {
     }
 }
 
-# iterator() doesn't do much yet.
-# This might change as the API gets more complex.
+
 sub iterator {
-    return $_[0]->clone;
+    my $self = shift;
+
+    my %args = @_;
+    my $span;
+    $span = delete $args{span};
+    $span = DateTime::Span->new( %args ) if %args;
+
+    return $self->intersection( $span ) if $span;
+    return $self->clone;
 }
+
 
 # next() gets the next element from an iterator()
 # next( $dt ) returns the next element after a datetime.
@@ -348,7 +353,7 @@ sub next {
             return $self->{next}->( $_[0]->clone );
         }
         else {
-            my $span = new DateTime::Span( after => $_[0] );
+            my $span = DateTime::Span->from_datetimes( after => $_[0] );
             return $self->intersection( $span )->next;
         }
     }
@@ -371,7 +376,7 @@ sub previous {
             return $self->{previous}->( $_[0]->clone );
         }
         else {
-            my $span = new DateTime::Span( before => $_[0] );
+            my $span = DateTime::Span->from_datetimes( before => $_[0] );
             return $self->intersection( $span )->previous;
         }
     }
@@ -394,7 +399,13 @@ sub closest {
     # return $_[0] if $self->contains( $_[0] );
     my $dt1 = $self->current( $_[0] );
     my $dt2 = $self->next( $_[0] );
-    return $dt1 if ( $_[0] - $dt1 ) <= ( $dt2 - $_[0] );
+
+    # removed - in order to avoid duration comparison
+    # return $dt1 if ( $_[0] - $dt1 ) <= ( $dt2 - $_[0] );
+
+    my $delta = $_[0] - $dt1;
+    return $dt1 if ( $dt2 - $delta ) >= $_[0];
+
     return $dt2;
 }
 
@@ -406,7 +417,7 @@ sub as_list {
     my %args = @_;
     my $span;
     $span = delete $args{span};
-    $span = DateTime::Span->new( @_ ) if @_;
+    $span = DateTime::Span->new( %args ) if %args;
 
     my $set = $self->{set};
     $set = $set->intersection( $span->{set} ) if $span;
@@ -425,11 +436,76 @@ sub as_list {
 
 # Set::Infinite methods
 
+my $max_iterate = 10;
+
 sub intersection {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
-    my $tmp = $class->new();
+    my $tmp = $class->empty_set();
     $set2 = $class->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
+
+    # optimization - use function composition if both sets are recurrences
+    if ( $set1->{next} && $set2->{next} &&
+         $set1->{previous} && $set2->{previous} )
+    {
+        # TODO: check 'span' - also in next/previous methods!
+        # TODO: add tests
+
+        # warn "compose intersection";
+        # my $span;
+        # $span = $set1->{span} if defined $set1->{span};
+        # if ( defined $set2->{span} ) {
+        #    $span = $span ? 
+        #            $span->intersection( $set2->{span} ) :
+        #            $set2->{span};
+        # }
+        return $class->from_recurrence(
+                  next =>  sub {
+                               # intersection of parent 'next' callbacks
+                               my $arg = shift;
+                               my ($tmp1, $tmp2);
+                               my ($next1, $next2);
+                               my $iterate = 0;
+                               while(1) { 
+                                   $next1 = $set1->{next}->( $arg->clone );
+                                   $tmp2 = $set2->{previous}->( $set2->{next}->( $next1->clone ) );
+  #warn "intersection arg ".$arg->datetime." 1 ".$tmp1_next->datetime." 2 ".$tmp2_next->datetime." ";
+                                   return $next1 if $next1 == $tmp2;
+                            
+
+                                   $next2 = $set2->{next}->( $arg->clone );
+                                   $tmp1 = $set1->{previous}->( $set1->{next}->( $next2->clone ) );
+  #warn "intersection arg ".$arg->datetime." 1 ".$tmp1_next->datetime." 2 ".$next2->datetime." ";
+                                   return $next2 if $next2 == $tmp1;
+                                  
+
+                                   $arg = $next1 > $next2 ? $next1 : $next2;
+                                   return if $iterate++ == $max_iterate;
+                               }
+                           },
+                  previous => sub {
+                               # intersection of parent 'previous' callbacks
+                               my $arg = shift;
+                               my ($tmp1, $tmp2, $cmp);
+                               my ($previous1, $previous2);
+                               my $iterate = 0;
+                               while(1) { 
+                                   $previous1 = $set1->{previous}->( $arg->clone );
+                                   $tmp2 = $set2->{previous}->( $set2->{next}->( $previous1->clone ) );
+                                   return $previous1 if $previous1 == $tmp2;
+
+                                   $previous2 = $set2->{previous}->( $arg->clone );
+                                   $tmp1 = $set1->{previous}->( $set1->{next}->( $previous2->clone ) );
+                                   return $previous2 if $previous2 == $tmp1;
+
+                                   $arg = $previous1 < $previous2 ? $previous1 : $previous2;
+                                   return if $iterate++ == $max_iterate;
+                               }
+                           },
+                  # ( $span ? ( span => $set1->{span}->intersection( $set2->{span} ) ) : () )
+               );
+    }
+
     $tmp->{set} = $set1->{set}->intersection( $set2->{set} );
     return $tmp;
 }
@@ -437,7 +513,7 @@ sub intersection {
 sub intersects {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
-    my $tmp = $class->new();
+    my $tmp = $class->empty_set();
     $set2 = $class->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
     return $set1->{set}->intersects( $set2->{set} );
 }
@@ -445,7 +521,7 @@ sub intersects {
 sub contains {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
-    my $tmp = $class->new();
+    my $tmp = $class->empty_set();
     $set2 = $class->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
     return $set1->{set}->contains( $set2->{set} );
 }
@@ -453,7 +529,7 @@ sub contains {
 sub union {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
-    my $tmp = $class->new();
+    my $tmp = $class->empty_set();
     $set2 = $class->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
     $tmp->{set} = $set1->{set}->union( $set2->{set} );
     bless $tmp, 'DateTime::SpanSet' 
@@ -464,7 +540,7 @@ sub union {
 sub complement {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
-    my $tmp = $class->new();
+    my $tmp = $class->empty_set();
     if (defined $set2) {
         $set2 = $class->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
         $tmp->{set} = $set1->{set}->complement( $set2->{set} );
@@ -488,7 +564,7 @@ sub max {
 # returns a DateTime::Span
 sub span {
   my $set = $_[0]->{set}->span;
-  bless $set, 'DateTime::Span';
+  bless { set => $set }, 'DateTime::Span';
   return $set;
 }
 
@@ -607,6 +683,8 @@ increments of 30 seconds would look like this:
   sub every_30_seconds {
       my $dt = shift;
 
+      $dt->truncate( to => 'seconds' );
+
       if ( $dt->second < 30 ) {
           $dt->add( seconds => 30 - $dt->second );
       } else {
@@ -619,6 +697,10 @@ as an exercise for the reader ;)
 
 It is also possible to create a recurrence by specifying both
 'next' and 'previous' callbacks.
+
+See also C<DateTime::Event::Recurrence> and the other C<DateTime::Event>
+modules for generating specialized recurrences, such as sunrise and sunset time, 
+and holidays.
 
 =item * empty_set
 
@@ -668,24 +750,32 @@ These methods can be used to iterate over the dates in a set.
         print $dt->ymd;
     }
 
+The boundaries of the iterator can be limited by passing it a C<span>
+parameter.  This should be a C<DateTime::Span> object which delimits
+the iterator's boundaries.  Optionally, instead of passing an object,
+you can pass any parameters that would work for one of the
+C<DateTime::Span> class's constructors, and an object will be created
+for you.
+
+Obviously, if the span you specify does is not restricted both at the
+start and end, then your iterator may iterate forever, depending on
+the nature of your set.  User beware!
+
 The C<next()> or C<previous()> method will return C<undef> when there
 are no more datetimes in the iterator.
-
-Obviously, if a set is specified as a recurrence and has no fixed end
-datetime, then it may never stop returning datetimes.  User beware!
 
 =item * as_list
 
 Returns a list of C<DateTime> objects.
 
-If a set is specified as a recurrence and has no fixed begin or end
-datetimes, then C<as_list> will return C<undef>.  Please note that
-this is explicitly not an empty list, since an empty list is a valid
-return value for empty sets!
+  my @dt = $set->as_list( span => $span );
 
-  my @dt = $r_daily->as_list( $span );
-
-This builds a DateTime array of events that happen inside the span.
+Just as with the C<iterator()> method, the C<as_list()> method can be
+limited by a span.  If a set is specified as a recurrence and has no
+fixed begin and end datetimes, then C<as_list> will return C<undef>
+unless you limit it with a span.  Please note that this is explicitly
+not an empty list, since an empty list is a valid return value for
+empty sets!
 
 =item * union / intersection / complement
 
@@ -708,21 +798,28 @@ All other operations will always return a C<DateTime::Set>.
 These set operations result in a boolean value.
 
     if ( $set1->intersects( $set2 ) ) { ...  # like "touches", "interferes"
-    if ( $set1->contains( $set2 ) ) { ...    # like "is-fully-inside"
+    if ( $set1->contains( $dt ) ) { ...    # like "is-fully-inside"
 
-=item * previous current next closest
+These methods can accept a C<DateTime>, C<DateTime::Set>,
+C<DateTime::Span>, or C<DateTime::SpanSet> object as an argument.
 
-  my $dt = $r_daily->next( $dt );
+=item * previous / next / current / closest
 
-  my $dt = $r_daily->previous( $dt );
+  my $dt = $set->next( $dt );
 
-Returns a set event related to a datetime.
+  my $dt = $set->previous( $dt );
 
-C<current> returns $dt if $dt is an event. 
-It returns previous event otherwise.
+These methods are used to find a set member relative to a given
+datetime.
 
-C<closest> returns $dt if $dt is an event. 
-Otherwise it returns the closest event (previous or next).
+The C<current()> method returns C<$dt> if $dt is an event, otherwise
+it returns the previous event.
+
+The C<closest()> method returns C<$dt> if $dt is an event, otherwise
+it returns the closest event (previous or next).
+
+All of these methods may return C<undef> if there is no matching
+datetime in the set.
 
 =back
 

@@ -35,12 +35,12 @@ my $months = DateTime::Set->from_recurrence(
 );
 $res = $months->min;
 $res = $res->ymd if ref($res);
-ok( $res eq '1810-09-01', 
-    "min() - got $res" );
+is( $res, '1810-09-01', 
+    "min()" );
 $res = $months->max;
 $res = $res->ymd if ref($res);
-ok( $res eq INFINITY,
-    "max() - got $res" );
+is( $res, INFINITY,
+    "max()" );
 
 # "END"
 my $months = DateTime::Set->from_recurrence(
@@ -49,12 +49,12 @@ my $months = DateTime::Set->from_recurrence(
 );
 $res = $months->min;
 $res = $res->ymd if ref($res);
-ok( $res eq NEG_INFINITY,
-    "min() - got $res" );
+is( $res, NEG_INFINITY,
+    "min()" );
 $res = $months->max;
 $res = $res->ymd if ref($res);
-ok( $res eq '1810-09-01',
-    "max() - got $res" );
+is( $res, '1810-09-01',
+    "max()" );
 
 # "START+END"
 my $months = DateTime::Set->from_recurrence(
@@ -64,12 +64,12 @@ my $months = DateTime::Set->from_recurrence(
 );
 $res = $months->min;
 $res = $res->ymd if ref($res);
-ok( $res eq '1810-09-01',
-    "min() - got $res" );
+is( $res, '1810-09-01',
+    "min()" );
 $res = $months->max;
 $res = $res->ymd if ref($res);
-ok( $res eq '1810-12-01',
-    "max() - got $res" );
+is( $res, '1810-12-01',
+    "max()" );
 
 
 # "START+END" at recurrence 
@@ -82,12 +82,12 @@ my $months = DateTime::Set->from_recurrence(
 );
 $res = $months->min;
 $res = $res->ymd if ref($res);
-ok( $res eq '1810-08-01',
-    "min() - got $res" );
+is( $res, '1810-08-01',
+    "min()" );
 $res = $months->max;
 $res = $res->ymd if ref($res);
-ok( $res eq '1810-12-01',
-    "max() - got $res" );
+is( $res, '1810-12-01',
+    "max()" );
 
 
 # verify that the set-span when backtracking is ok.
@@ -95,8 +95,8 @@ ok( $res eq '1810-12-01',
 $res = $months->intersection( DateTime->new( year=>1810, month=>12, day=>1 ) );
 $res = $res->max;
 $res = $res->ymd if ref($res);
-ok( $res eq '1810-12-01',
-    "intersection at the recurrence - got $res" );
+is( $res, '1810-12-01',
+    "intersection at the recurrence" );
 
 1;
 

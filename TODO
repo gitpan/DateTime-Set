@@ -1,9 +1,17 @@
+- intersection() function composition in DateTime::Set
+    - check 'span'
+    - add tests
+    - 'union' too ?
+
+- check 'span' in next/previous methods
+    - add tests
+
+- as_list in SpanSet.pm
+- previous in SpanSet for iterators
 
 - discuss functions like 
     is_infinite
     is_empty 
-    start_is_close 
-    end_is_open
 
     cardinality ?
 
