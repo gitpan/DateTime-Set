@@ -12,7 +12,7 @@ use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 use vars qw( @ISA $PRETTY_PRINT $max_iterate );
 
 @ISA = qw( Set::Infinite );
-use Set::Infinite 0.5305;
+use Set::Infinite 0.5502;
 
 BEGIN {
     $PRETTY_PRINT = 1;   # enable Set::Infinite debug
@@ -24,8 +24,20 @@ BEGIN {
     $Set::Infinite::_first{_recurrence} = 
         sub {
             my $self = $_[0];
-            my ($callback_next, $callback_current) = @{ $self->{param} };
+            my ($callback_next, $callback_current, $callback_previous) = @{ $self->{param} };
             my ($min, $min_open) = $self->{parent}->min_a;
+
+            # "objectify" infinity
+            if ( ! ref($min) )
+            {
+                if ( $min == NEG_INFINITY ) {
+                    $min = DateTime::Infinite::Past->new 
+                }
+                elsif ( $min == INFINITY ) {
+                    $min = DateTime::Infinite::Future->new 
+                }
+            }
+
             if ( $min_open )
             {
                 $min = $callback_next->( $min );
@@ -34,6 +46,7 @@ BEGIN {
             {
                 $min = $callback_current->( $min );
             }
+
             return ( $self->new( $min ),
                      $self->new( $callback_next->( $min ), 
                                  $self->{parent}->max )->
@@ -44,6 +57,18 @@ BEGIN {
             my $self = $_[0];
             my (undef, $callback_current, $callback_previous) = @{ $self->{param} };
             my ($max, $max_open) = $self->{parent}->max_a;
+
+            # "objectify" infinity
+            if ( ! ref($max) )
+            {
+                if ( $max == NEG_INFINITY ) {
+                    $max = DateTime::Infinite::Past->new 
+                }
+                elsif ( $max == INFINITY ) {
+                    $max = DateTime::Infinite::Future->new 
+                }
+            }
+
             if ( $max_open )
             {
                 $max = $callback_previous->( $max );
@@ -54,14 +79,13 @@ BEGIN {
                 $max = $callback_previous->( $max ) 
                     if $max > $self->{parent}->max;
             }
+
             return ( $self->new( $max ),
                      $self->new( $self->{parent}->min, 
                                  $callback_previous->( $max ) )->
                           _function( '_recurrence', @{ $self->{param} } ) );
         };
 }
-
-my $forever = Set::Infinite::_recurrence->new( NEG_INFINITY, INFINITY );
 
 # $si->_recurrence(
 #     \&callback_next, \&callback_current, \&callback_previous )
@@ -324,6 +348,8 @@ ranging from -Infinity to Infinity.
 
 Returns true if the set is an unbounded recurrence, 
 ranging from -Infinity to Infinity.
+
+=back
 
 =head1 CONSTANTS
 

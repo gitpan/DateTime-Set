@@ -7,7 +7,7 @@ package DateTime::SpanSet;
 use strict;
 
 use DateTime::Set;
-use DateTime::SpanSet;
+# use DateTime::SpanSet;
 
 use Carp;
 use Params::Validate qw( validate SCALAR BOOLEAN OBJECT CODEREF ARRAYREF );
@@ -17,8 +17,26 @@ use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 $VERSION = $DateTime::Set::VERSION;
 
+sub iterate {
+    my ( $self, $callback ) = @_;
+    my $class = ref( $self );
+    my $return = $class->empty_set;
+    $return->{set} = $self->{set}->iterate(
+        sub {
+            my $span = bless { set => $_[0] }, 'DateTime::Span';
+            $callback->( $span->clone );
+            $span = $span->{set} 
+                if UNIVERSAL::can( $span, 'union' );
+            return $span;
+        }
+    );
+    $return;
+}
+
 sub set_time_zone {
     my ( $self, $tz ) = @_;
+
+    # TODO - use iterate() instead 
 
     my $result = $self->{set}->iterate( 
         sub {
@@ -30,13 +48,13 @@ sub set_time_zone {
     );
 
     ### this code enables 'subroutine method' behaviour
-    $self->{set} = $result;
-    return $self;
+    # $self->{set} = $result;
+    # return $self;
 
     ### this code enables 'function method' behaviour
-    # my $set = $self->clone;
-    # $set->{set} = $result;
-    # return $set;
+    my $set = $self->clone;
+    $set->{set} = $result;
+    return $set;
 }
 
 sub from_spans {
@@ -87,6 +105,18 @@ sub from_sets {
                    $args{end_set}->{set} );
     bless $self, $class;
     return $self;
+}
+
+sub start_set {
+    my $return = DateTime::Set->empty_set;
+    $return->{set} = $_[0]->{set}->start_set;
+    $return;
+}
+
+sub end_set {
+    my $return = DateTime::Set->empty_set;
+    $return->{set} = $_[0]->{set}->end_set;
+    $return;
 }
 
 sub empty_set {
@@ -266,9 +296,8 @@ sub max {
 # returns a DateTime::Span
 sub span { 
     my $set = $_[0]->{set}->span;
-    my $self = { set => $set };
-    bless $self, 'DateTime::Span';
-    return $set;
+    my $self = bless { set => $set }, 'DateTime::Span';
+    return $self;
 }
 
 # returns a DateTime::Duration
@@ -381,6 +410,8 @@ the local time are made, except to account for leap seconds.  If the
 new time zone is floating, then the I<UTC> time is adjusted in order
 to leave the local time untouched.
 
+The method returns a new object.
+
 =item * min / max
 
 First or last dates in the set.  These methods may return C<undef> if
@@ -472,6 +503,62 @@ the nature of your set.  User beware!
 
 The C<next()> or C<previous()> methods will return C<undef> 
 when there are no more spans in the iterator.
+
+=item * start_set
+
+=item * end_set
+
+These methods do the inverse of the C<from_sets> method:
+
+C<start_set> retrieves a DateTime::Set with the start datetime of each span.
+
+C<end_set> retrieves a DateTime::Set with the end datetime of each span.
+
+=item * iterate
+
+I<Experimental method - subject to change.>
+
+This function apply a callback subroutine to all elements of a set
+and returns the resulting set.
+
+The parameter C<$_[0]> to the callback subroutine is a C<DateTime::Span>
+object.
+
+    [TODO - fix example]
+
+    sub callback {
+        $_[0]->add( hours => 1 );
+    }
+
+    # $set2 elements are one hour after $set elements, and
+    # $set is unchanged
+    $set2 = $set->iterate( \&callback );
+
+If the callback returns C<undef>, the datetime is removed from the set:
+
+    sub remove_sundays {
+        $_[0] unless $_[0]->start->day_of_week == 7;
+    }
+
+The callback can be used to postpone or anticipate
+events which collide with datetimes in another set:
+
+    [TODO - fix example]
+
+    sub after_holiday {
+        $_[0]->add( days => 1 ) while $holidays->contains( $_[0] );
+    }
+
+The callback return value is expected to be within the span of the
+C<previous> and the C<next> element in the original set.
+
+For example: given the set C<[ 2001, 2010, 2015 ]>,
+the callback result for the value C<2010> is expected to be
+within the span C<[ 2001 .. 2015 ]>.
+
+The callback subroutine may not be called immediately.
+Don't count on subroutine side-effects. For example,
+a C<print> inside the subroutine may happen later than you expect.
 
 =back
 

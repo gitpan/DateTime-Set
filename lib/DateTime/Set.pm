@@ -10,30 +10,29 @@ use DateTime::Span;
 use Set::Infinite 0.5307;
 use Set::Infinite::_recurrence;
 
-use vars qw( $VERSION $neg_nanosecond $forever );
+use vars qw( $VERSION );
 
 use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
 BEGIN {
-    $VERSION = '0.14';
-    $neg_nanosecond = DateTime::Duration->new( nanoseconds => -1 );
+    $VERSION = '0.1404';
 }
-
-$forever = Set::Infinite::_recurrence->new( NEG_INFINITY, INFINITY );
 
 sub iterate {
     my ( $self, $callback ) = @_;
-    $self->{set} = $self->{set}->iterate( 
+    my $class = ref( $self );
+    my $return = $class->empty_set;
+    $return->{set} = $self->{set}->iterate( 
         sub {
             my $min = $_[0]->min;
             $callback->( $min->clone ) if ref($min);
         }
     );
-    $self;
+    $return;
 }
 
-sub add { shift->add_duration( DateTime::Duration->new(@_) ) }
+sub add { return shift->add_duration( DateTime::Duration->new(@_) ) }
 
 sub subtract { return shift->subtract_duration( DateTime::Duration->new(@_) ) }
 
@@ -42,14 +41,14 @@ sub subtract_duration { return $_[0]->add_duration( $_[1]->inverse ) }
 sub add_duration {
     my ( $self, $dur ) = @_;
     $dur = $dur->clone;  # $dur must be "immutable"
-    $self->iterate(
+    return $self->iterate(
         sub { $_[0]->add_duration( $dur ) }
     );
 }
 
 sub set_time_zone {
     my ( $self, $tz ) = @_;
-    $self->iterate( 
+    return $self->iterate( 
         sub { $_[0]->set_time_zone( $tz ) }
     );
 }
@@ -61,7 +60,7 @@ sub set {
                                        default => undef },
                          }
                        );
-    $self->iterate( 
+    return $self->iterate( 
         sub { $_[0]->set( %args ) }
     );
 }
@@ -122,7 +121,7 @@ sub from_recurrence {
         {
             $param{current} =
                 sub {
-                    ref $_[0] ? _callback_current ( $_[0], $param{next} ) : $_[0];
+                    ref $_[0] ? _callback_current ( $_[0], $param{next}, $param{previous} ) : $_[0];
                 }
         }
         else
@@ -134,8 +133,15 @@ sub from_recurrence {
                 }
         }
 
+        my $max = $param{previous}->( DateTime::Infinite::Future->new );
+        my $min = $param{next}->( DateTime::Infinite::Past->new );
+        $max = INFINITY if $max->is_infinite;
+        $min = NEG_INFINITY if $min->is_infinite;
+        my $base_set = Set::Infinite::_recurrence->new( $min, $max );
+        # warn "base set is $base_set\n";
+
         $self->{set} = 
-            $forever->_recurrence(
+            $base_set->_recurrence(
                 $param{next}, 
                 $param{current},
                 $param{previous} 
@@ -185,11 +191,10 @@ sub clone {
 
 # default callback that returns the 
 # "current" value (greater or equal) in a callback recurrence.
-# Does not change $_[0]
 #
 sub _callback_current {
-    # ($value, $callback_next)
-    return $_[1]->( $_[0] + $neg_nanosecond );
+    my ($value, $callback_next, $callback_previous ) = @_;
+    return $callback_next->( $callback_previous->( $value ) );
 }
 
 # default callback that returns the 
@@ -198,9 +203,13 @@ sub _callback_current {
 # This is used to simulate a 'previous' callback,
 # when then 'previous' argument in 'from_recurrence' is missing.
 #
+use DateTime::Infinite;
+
 sub _callback_previous {
     my ($value, $callback_next, $callback_info) = @_; 
     my $previous = $value->clone;
+
+    return $value if $value->is_infinite;
 
     my $freq = $callback_info->{freq};
     unless (defined $freq) 
@@ -242,6 +251,8 @@ sub _callback_previous {
 sub _callback_next {
     my ($value, $callback_previous, $callback_info) = @_; 
     my $next = $value->clone;
+
+    return $value if $value->is_infinite;
 
     my $freq = $callback_info->{freq};
     unless (defined $freq) 
@@ -505,8 +516,8 @@ sub max {
 # returns a DateTime::Span
 sub span {
   my $set = $_[0]->{set}->span;
-  bless { set => $set }, 'DateTime::Span';
-  return $set;
+  my $self = bless { set => $set }, 'DateTime::Span';
+  return $self;
 }
 
 sub count {
@@ -545,10 +556,17 @@ DateTime::Set - Datetime sets and set math
     $set2 = DateTime::Set->from_datetimes( dates => [ $date1, $date2 ] );
     #  set2 = 2002-03-11, and 2003-04-12
 
+    $date3 = DateTime->new( year => 2003, month => 4, day => 1 );
+    print $set2->next( $date3 )->ymd;      # 2003-04-12
+    print $set2->previous( $date3 )->ymd;  # 2002-03-11
+    print $set2->current( $date3 )->ymd;   # 2002-03-11
+    print $set2->closest( $date3 )->ymd;   # 2003-04-12
+
     # a 'monthly' recurrence:
     $set = DateTime::Set->from_recurrence( 
         recurrence => sub {
-            $_[0]->truncate( to => 'month' )->add( months => 1 )
+            return $_[0] if $_[0]->is_infinite;
+            return $_[0]->truncate( to => 'month' )->add( months => 1 )
         },
         span => $date_span1,    # optional span
     );
@@ -604,7 +622,8 @@ Creates a new set specified via a "recurrence" callback.
     $months = DateTime::Set->from_recurrence( 
         span => $dt_span_this_year,    # optional span
         recurrence => sub { 
-            $_[0]->truncate( to => 'month' )->add( months => 1 ) 
+            return $_[0] if $_[0]->is_infinite;
+            return $_[0]->truncate( to => 'month' )->add( months => 1 ) 
         }, 
     );
 
@@ -617,28 +636,38 @@ case, if there is a C<span> parameter it will be ignored.
     $months = DateTime::Set->from_recurrence(
         after => $dt_now,
         recurrence => sub {
-            $_[0]->truncate( to => 'month' )->add( months => 1 )
+            return $_[0] if $_[0]->is_infinite;
+            return $_[0]->truncate( to => 'month' )->add( months => 1 );
         },
     );
 
 The recurrence will be passed a single parameter, a DateTime.pm
-object.  The recurrence must generate the I<next> event 
+object.  The recurrence must return the I<next> event 
 after that object.  There is no guarantee as to what the object will
 be set to, only that it will be greater than the object
 passed to the recurrence.
+
+The recurrence function must return a valid DateTime object.
+
+The function must work if given C<DateTime::Infinite::Future> and 
+C<DateTime::Infinite::Past> parameters.
+
+It is ok to modify C<$_[0]> inside the recurrence function.
+There are no side-effects.
 
 For example, if you wanted a recurrence that generated datetimes in
 increments of 30 seconds would look like this:
 
   sub every_30_seconds {
       my $dt = shift;
+      return $dt if $dt->is_infinite;
 
       $dt->truncate( to => 'seconds' );
 
       if ( $dt->second < 30 ) {
-          $dt->add( seconds => 30 - $dt->second );
+          return $dt->add( seconds => 30 - $dt->second );
       } else {
-          $dt->add( seconds => 60 - $dt->second );
+          return $dt->add( seconds => 60 - $dt->second );
       }
   }
 
@@ -647,6 +676,40 @@ as an exercise for the reader ;)
 
 It is also possible to create a recurrence by specifying either or both
 'next' and 'previous' callbacks.
+
+Callbacks can return C<DateTime::Infinite::Future> and 
+C<DateTime::Infinite::Past> objects, in order to define I<bounded recurrences>.
+In this case, both 'next' and 'previous' callbacks must be defined:
+
+    # "monthly from $dt until forever"
+
+    my $months = DateTime::Set->from_recurrence(
+        next => sub {
+            $_[0]->truncate( to => 'month' );
+            $_[0]->add( months => 1 );
+            return $_[0] if $_[0] >= $dt;
+            return $dt->clone;
+        },
+        previous => sub {
+            my $param = $_[0]->clone;
+            $_[0]->truncate( to => 'month' );
+            $_[0]->subtract( months => 1 ) if $_[0] == $param;
+            return $_[0] if $_[0] >= $dt;
+            return DateTime::Infinite::Past->new;
+        },
+    );
+
+Bounded recurrences are is easier to write using span parameters:
+
+    # "monthly from $dt until forever"
+
+    $months = DateTime::Set->from_recurrence(
+        start => $dt,
+        recurrence => sub {
+            return $_[0] if $_[0]->is_infinite;
+            return $_[0]->truncate( to => 'month' )->add( months => 1 );
+        },
+    );
 
 See also C<DateTime::Event::Recurrence> and the other C<DateTime::Event::*>
 modules for generating specialized recurrences, such as sunrise and sunset
@@ -657,6 +720,7 @@ time, and holidays.
 Creates a new empty set.
 
     $set = DateTime::Set->empty_set;
+    print "empty set" unless defined $set->max;
 
 =item * clone
 
@@ -673,9 +737,9 @@ but you want to keep the previous value:
 This method adds the specified duration added to every element of the set.
 
     $dtd = new DateTime::Duration( year => 1 );
-    $new_set = $set->add_duration( $dtd );
+    $set->add_duration( $dtd );
 
-The original set is modified. The method returns the set object.
+The original set is not modified. The method returns a new set object.
 
 Note: The result of adding a duration to a given set element 
 is expected to be within the span of the
@@ -685,15 +749,11 @@ For example: given the set C<[ 2001, 2010, 2015 ]>,
 the add_duration result for the value C<2010> is expected to be
 within the span C<[ 2001 .. 2015 ]>.
 
-Note: API change - before version 0.1205, the object was not mutated.
-If you need to keep the original object, do a C<clone> operation 
-before calling C<add_duration>.
-
 =item * add
 
 This method is syntactic sugar around the C<add_duration()> method.
 
-    $meetings_2004 = $meetings_2003->add( years => 1 );
+    $meetings_2004 = $meetings_2003->clone->add( years => 1 );
 
 =item * subtract_duration( $duration_object )
 
@@ -701,7 +761,7 @@ When given a C<DateTime::Duration> object, this method simply calls
 C<invert()> on that object and passes that new duration to the
 C<add_duration> method.
 
-The original set is modified. The method returns the set object.
+The original set is not modified. The method returns a new set object.
 
 =item * subtract( DateTime::Duration->new parameters )
 
@@ -720,13 +780,15 @@ the local time are made, except to account for leap seconds.  If the
 new time zone is floating, then the I<UTC> time is adjusted in order
 to leave the local time untouched.
 
-The original set C<time zone> is modified. The method returns the set object.
+The original set C<time zone> is not modified. 
+The method returns a new set object.
 
 =item * set( locale => .. )
 
 This method can be used to change the C<locale> of a date time set.
 
-The original set C<locale> is modified. The method returns the set object.
+The original set C<locale> is not modified. 
+The method returns a new set object.
 
 =item * min / max
 
@@ -744,6 +806,12 @@ These methods can be used to iterate over the dates in a set.
 
     $iter = $set1->iterator;
     while ( $dt = $iter->next ) {
+        print $dt->ymd;
+    }
+
+    # iterate backwards
+    $iter = $set1->iterator;
+    while ( $dt = $iter->previous ) {
         print $dt->ymd;
     }
 
@@ -827,8 +895,9 @@ a C<DateTime::Span>, or a C<DateTime::SpanSet> object as an argument.
 =item * previous / next / current / closest
 
   my $dt = $set->next( $dt );
-
   my $dt = $set->previous( $dt );
+  my $dt = $set->current( $dt );
+  my $dt = $set->closest( $dt );
 
 These methods are used to find a set member relative to a given
 datetime.
@@ -846,18 +915,16 @@ datetime in the set.
 
 I<Experimental method - subject to change.>
 
-This method apply a callback subroutine to all elements of a set.
+This function apply a callback subroutine to all elements of a set
+and returns the resulting set.
 
     sub callback {
         $_[0]->add( hours => 1 );
     }
 
-    # offset $set elements by one hour
-    $set->iterate( \&callback );  
-
     # $set2 elements are one hour after $set elements, and
     # $set is unchanged
-    $set2 = $set->clone->iterate( \&callback );  
+    $set2 = $set->iterate( \&callback );  
 
 If the callback returns C<undef>, the datetime is removed from the set:
 
@@ -878,6 +945,10 @@ C<previous> and the C<next> element in the original set.
 For example: given the set C<[ 2001, 2010, 2015 ]>, 
 the callback result for the value C<2010> is expected to be 
 within the span C<[ 2001 .. 2015 ]>.
+
+The callback subroutine may not be called immediately.
+Don't count on subroutine side-effects. For example,
+a C<print> inside the subroutine may happen later than you expect.
 
 =back
 
