@@ -275,7 +275,9 @@ sub span {
 sub duration { 
     my $dur; 
     eval { $dur = $_[0]->{set}->size };
-    defined $dur ? $dur : INFINITY 
+    return $dur if defined $dur;
+    $@ = undef;  # clear the eval() error message
+    return INFINITY;
 }
 *size = \&duration;
 
@@ -398,12 +400,12 @@ The total span of the set, as a C<DateTime::Span> object.
 
 =item * previous / next 
 
-These methods are used to find a span in the set, relative to a given
-datetime or span.
-
   my $span = $set->next( $dt );
 
   my $span = $set->previous( $dt );
+
+These methods are used to find a set member relative to a given
+datetime or span.
 
 The return value may be C<undef> if there is no matching
 span in the set.

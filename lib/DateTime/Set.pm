@@ -7,7 +7,7 @@ use Params::Validate qw( validate SCALAR BOOLEAN OBJECT CODEREF ARRAYREF );
 use DateTime 0.12;  # this is for version checking only
 use DateTime::Duration;
 use DateTime::Span;
-use Set::Infinite 0.54;
+use Set::Infinite 0.5307;
 use Set::Infinite::_recurrence;
 
 use vars qw( $VERSION $neg_nanosecond $forever );
@@ -16,7 +16,7 @@ use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
 BEGIN {
-    $VERSION = '0.13';
+    $VERSION = '0.14';
     $neg_nanosecond = DateTime::Duration->new( nanoseconds => -1 );
 }
 
@@ -826,12 +826,12 @@ a C<DateTime::Span>, or a C<DateTime::SpanSet> object as an argument.
 
 =item * previous / next / current / closest
 
-These methods are used to find a set member relative to a given
-datetime.
-
   my $dt = $set->next( $dt );
 
   my $dt = $set->previous( $dt );
+
+These methods are used to find a set member relative to a given
+datetime.
 
 The C<current()> method returns C<$dt> if $dt is an event, otherwise
 it returns the previous event.

@@ -285,7 +285,9 @@ sub span { @_ }
 sub duration { 
     my $dur;
     eval { $dur = $_[0]->end->subtract_datetime_absolute( $_[0]->start ) };
-    defined $dur ? $dur : INFINITY 
+    return $dur if defined $dur;
+    $@ = undef;  # clear the eval() error message
+    return INFINITY;
 }
 *size = \&duration;
 
@@ -402,13 +404,18 @@ DateTime::Infinite::Past object.
 If the set ends C<before> a date C<$dt>, it returns C<$dt>. Note that
 in this case C<$dt> is not a set element - but it is a set boundary.
 
+=cut
+
+# scalar containing either negative infinity
+# or positive infinity.
+
 =item * start_is_closed / end_is_closed
 
-Returns true if the first or last dates belong to the span C<( begin <= x <= end )>.
+Returns true if the first or last dates belong to the span ( begin <= x <= end ).
 
 =item * start_is_open / end_is_open
 
-Returns true if the first or last dates are excluded from the span C<( begin < x < end )>.
+Returns true if the first or last dates are excluded from the span ( begin < x < end ).
 
 =item * union / intersection / complement
 
