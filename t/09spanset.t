@@ -142,7 +142,7 @@ ok( $res eq '1813-12-23T00:00:00..'.INFINITY,
     my $iter = $s1->iterator;
 
     $res = span_str( $iter->next );
-    ok( $res eq '-inf..1810-09-20T00:00:00',
+    ok( $res eq NEG_INFINITY.'..1810-09-20T00:00:00',
         "start_set == end_set recurrence works properly - got $res" );
 
     $res = span_str( $iter->next );
