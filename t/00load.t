@@ -1,4 +1,6 @@
-# $Header: /cvsroot/perl-date-time/modules/DateTime-Set/t/00load.t,v 1.1 2003/02/26 19:53:24 autarch Exp $
+#!/usr/bin/perl -w
+
+# $Header: /cvsroot/perl-date-time/modules/DateTime-Set/t/00load.t,v 1.2 2003/05/14 17:38:43 fglock Exp $
 
 use Test::More;
 

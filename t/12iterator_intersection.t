@@ -1,3 +1,5 @@
+#!/usr/bin/perl -w
+
 use strict;
 
 use Test::More;
@@ -6,6 +8,7 @@ plan tests => 4;
 use DateTime;
 use DateTime::Duration;
 use DateTime::Set;
+# use warnings;
 
 #======================================================================
 # recurrence intersection
@@ -76,11 +79,11 @@ ok( $res eq '1811-04-15',
     "min() - got $res" );
 
 
-my $iterator = $m12->iterator;
-my @res;
+$iterator = $m12->iterator;
+@res = ();
 for (1..3) {
         my $tmp = $iterator->next;
-        push @res, $tmp->ymd if defined $tmp;
+        push @res, $tmp->ymd if defined $tmp && ref($tmp);
 }
 $res = join( ' ', @res );
 ok( $res eq '1811-04-15 1811-06-15 1811-09-15',
