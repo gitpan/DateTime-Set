@@ -1,5 +1,50 @@
 Changes for DateTime::Set
 
+0.1410  2004-03-26
+- Build.PL
+
+0.1409  2004-03-23
+- evaluation of bounded recurrences is "lazier".
+  (DateTime::Incomplete tests are twice as fast)
+
+0.1408  2004-03-22
+- refactored S::I::_recurrence class:
+  it doesn't use "current" anymore; 
+  small bugfixes & optimizations. 
+  ("current" was not documented in DT::Set)
+- new test: t/17quantize.t
+  Tests a method to make "quantization" (or "discretization")
+  of spansets.
+
+0.1407  2004-03-16
+- New methods:
+  DateTime::SpanSet::current
+  DateTime::Spanset::closest
+
+- "Fixed" DateTime::SpanSet::next / previous 
+  no longer "split" the returned spans.
+
+- Added examples and parameter validation to map / grep
+
+- DateTime::SpanSet::duration may return an 'infinite' 
+  DateTime::Duration, instead of scalar infinity.
+
+- Bugfix: DateTime::Spanset::union / intersection / ...
+  correctly accept DateTime parameters.
+
+0.1406  2004-03-15
+- New methods: 
+  DateTime::Set::map / grep
+  DateTime::SpanSet::map / grep
+  From a discussion with Andrew Pimlott and Dave Rolsky
+- Cleanup "datetime" code from _recurrence.pm 
+- iterate() marked as "internal"
+
+0.1405  2004-03-15
+- New method: DateTime::SpanSet::intersected_spans
+  Suggested by Reinhold May
+  Name suggested by Dave Rolsky
+
 0.1404  2004-03-14
 - New methods: DateTime::SpanSet::start_set / end_set 
   These are the inverse of the "from_sets" method.
@@ -7,6 +52,9 @@ Changes for DateTime::Set
 
 0.1403  2004-03-10
 - new method DateTime::SpanSet::iterate
+
+[ *** BACKWARDS INCOMPATIBILITIES *** ]
+
 - DateTime::Set and DateTime::SpanSet methods do not mutate the set.
   This is the behaviour we had before version 0.13
 

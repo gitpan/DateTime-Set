@@ -1,0 +1,53 @@
+This file contains message digests of all files listed in MANIFEST,
+signed via the Module::Signature module, version 0.38.
+
+To verify the content in this distribution, first make sure you have
+Module::Signature installed, then type:
+
+    % cpansign -v
+
+It would check each file's integrity, as well as the signature's
+validity.  If "==> Signature verified OK! <==" is not displayed,
+the distribution may already have been compromised, and you should
+not run its Makefile.PL or Build.PL.
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+SHA1 6444b0faa84c9e8627557ce17105a796d8e1f3a9 Build.PL
+SHA1 02f93a0266969a2583342f50f05f353b09681980 Changes
+SHA1 f235ba4160673bcb7c9d58c2f09dbc7fc0efadea LICENSE
+SHA1 1a4280c438a00416daf304c9190157d9329be8f9 MANIFEST
+SHA1 278c5a91b62917b252b007e97625278751836017 MANIFEST.SKIP
+SHA1 b0daf8f0928db4ab950d5e78018d08b65e5a8456 META.yml
+SHA1 c8366050c8994be7903327afb78a1165c6b4d0bf README
+SHA1 3be2f17cf254971395992769b424489574537435 TODO
+SHA1 e4e594c7ec10f2829fc636144d1a03a0ebf11a81 lib/DateTime/Set.pm
+SHA1 021cfc778ebbda163bee34b41e25c6a702cf814e lib/DateTime/Span.pm
+SHA1 8b6a364136932d7bd76e8e62cb393faada6f747a lib/DateTime/SpanSet.pm
+SHA1 96ec39c6f08798a5940b6317a6716f9699ad3d9b lib/Set/Infinite/_recurrence.pm
+SHA1 23fd7468a05c7de235a2485b5d6fd89d1f503e5d t/00load.t
+SHA1 7e95a741e72c3e9db4b8ec4516d43f469da27097 t/01sanity.t
+SHA1 b87042ae9546af7cf14ed18457d472418ea80c54 t/02immutable.t
+SHA1 9097809612751e70e21c58b6b3588b12314609ea t/03add_subtract.t
+SHA1 1e6b30ce270f92e55872bd4862af567a08577123 t/04recurrence.t
+SHA1 04548ad71a263112f4d75762c35b2f8c66917a1f t/05iterator.t
+SHA1 0a137ddea01d1168bbb98b25a4e3998462ea36bf t/06backtrack.t
+SHA1 c0cdc95f6064031fa6ee0146e5ef29090c99fcfb t/07previous.t
+SHA1 363085ef5ddeb416b3c6da6db724e7abf39f54c9 t/08span.t
+SHA1 e950277f351d589fb4de8c340c3b5f8b258ef70f t/09spanset.t
+SHA1 6da74fa776a76453b2a2a5e3ddf9a11f694dc5d0 t/10previous-2.t
+SHA1 b47748f4bd9b5bf44723dfb6ec5aca6f9971c752 t/11next.t
+SHA1 ee09d03cf9444bd159d6ce92351a840405c00365 t/12iterator_intersection.t
+SHA1 7f56e87689802f956e9abbea872dff4a8ba78709 t/13add_recurrence.t
+SHA1 166a895089a26b817721008164584253fe2fcb04 t/14complement.t
+SHA1 d95d63d1f3af51e7a675e34e751c48073d653769 t/15time_zone.t
+SHA1 3b4a07cb4be9d62ebf1eba489bfd9faec76002d0 t/16bounded_recurrence.t
+SHA1 625dbf67aa06e8383ab7724c6b469f7ddf6c9c15 t/17quantize.t
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.0.7 (GNU/Linux)
+
+iD8DBQFAZJsz6M27JTVXUokRAqE/AKCgyDXIkWooExJL0qBGnExGJth/5ACgj/vH
+VDiDBnkn7T2JcD6iV6h2Nw8=
+=pZG/
+-----END PGP SIGNATURE-----

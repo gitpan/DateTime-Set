@@ -1,21 +1,22 @@
 TODO list for DT::Set, DT::Span, and DT::SpanSet
 
-- New method: intersected_spans
-  Suggested by Reinhold May
-  Name suggested by Dave Rolsky
+- Test for errors, in case the "next/previous" 
+  recurrence spec is not followed (detect infinite loop).
 
-- New methods: map / grep
-  From a discussion with Andrew Pimlott and Dave Rolsky
+  Give a message like:
+  "A recurrence loop was detected. Check that you are using
+   the latest DateTime::Event module version" 
 
-- test DT::SpanSet->iterate; fix examples.
+  Or, try to detect the error and automatically
+  "downgrade" DateTime::Set.
+
+  The problem is, the infinite loops happens
+  _inside_ next(). There seems to be no way to
+  detect this.
 
 - implement set( locale => .. ) in Span and SpanSet
-  implement iterator( \&sub )
 
-- specify what these DT::SpanSet methods should return -
-  a datetime, a span, or what - under discussion in datetime@perl.org 
-    current( $dt|$span )
-    closest( $dt|$span )
+- Add tests for new methods: DateTime::SpanSet::map / grep
 
 - discuss functions like 
     is_infinite
@@ -35,9 +36,8 @@ TODO list for DT::Set, DT::Span, and DT::SpanSet
   how to transform a Span into an iterator - for example,
   get the list of days in a span
 
-- DateTime::SpanSet duration() returns 'Inf' scalar - 
-  should be a DT::Duration::Infinite
-  (DT::Span is correct)
-
 - optimization: rewrite intersection of recurrences 'previous' function
+
+- optimization: extract start_set / end_set right from
+  the data structure, if possible.
 

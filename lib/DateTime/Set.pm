@@ -7,7 +7,7 @@ use Params::Validate qw( validate SCALAR BOOLEAN OBJECT CODEREF ARRAYREF );
 use DateTime 0.12;  # this is for version checking only
 use DateTime::Duration;
 use DateTime::Span;
-use Set::Infinite 0.5307;
+use Set::Infinite 0.5503;
 use Set::Infinite::_recurrence;
 
 use vars qw( $VERSION );
@@ -16,7 +16,7 @@ use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
 BEGIN {
-    $VERSION = '0.1404';
+    $VERSION = '0.1410';
 }
 
 sub iterate {
@@ -27,6 +27,45 @@ sub iterate {
         sub {
             my $min = $_[0]->min;
             $callback->( $min->clone ) if ref($min);
+        }
+    );
+    $return;
+}
+
+sub map {
+    my ( $self, $callback ) = @_;
+    my $class = ref( $self );
+    die "The callback parameter to map() must be a subroutine reference"
+        unless ref( $callback ) eq 'CODE';
+    my $return = $class->empty_set;
+    $return->{set} = $self->{set}->iterate( 
+        sub {
+            local $_ = $_[0]->min;
+            next unless ref( $_ );
+            $_ = $_->clone;
+            my @list = $callback->();
+            my $set = Set::Infinite::_recurrence->new();
+            $set = $set->union( $_ ) for @list;
+            return $set;
+        }
+    );
+    $return;
+}
+
+sub grep {
+    my ( $self, $callback ) = @_;
+    my $class = ref( $self );
+    die "The callback parameter to grep() must be a subroutine reference"
+        unless ref( $callback ) eq 'CODE';
+    my $return = $class->empty_set;
+    $return->{set} = $self->{set}->iterate( 
+        sub {
+            local $_ = $_[0]->min;
+            next unless ref( $_ );
+            $_ = $_->clone;
+            my $result = $callback->();
+            return $_ if $result;
+            return;
         }
     );
     $return;
@@ -88,7 +127,17 @@ sub from_recurrence {
             my $data = {};
             $param{previous} =
                 sub {
-                    ref $_[0] ? _callback_previous ( $_[0], $param{next}, $data ) : $_[0];
+                    # "objectify" infinity
+                    if ( ! ref( $_[0] ) )
+                    {
+                        if ( $_[0] == NEG_INFINITY ) {
+                            $_[0] = DateTime::Infinite::Past->new; 
+                        }
+                        elsif ( $_[0] == INFINITY ) {
+                            $_[0] = DateTime::Infinite::Future->new 
+                        }
+                    }
+                    _callback_previous ( $_[0], $param{next}, $data );
                 }
         }
         else
@@ -96,7 +145,17 @@ sub from_recurrence {
             my $previous = $param{previous};
             $param{previous} =
                 sub {
-                    ref $_[0] ? $previous->( $_[0]->clone ) : $_[0];
+                    # "objectify" infinity
+                    if ( ! ref( $_[0] ) )
+                    {
+                        if ( $_[0] == NEG_INFINITY ) {
+                            $_[0] = DateTime::Infinite::Past->new; 
+                        }
+                        elsif ( $_[0] == INFINITY ) {
+                            $_[0] = DateTime::Infinite::Future->new 
+                        }
+                    }
+                    $previous->( $_[0]->clone );
                 }
         }
 
@@ -105,7 +164,17 @@ sub from_recurrence {
             my $data = {};
             $param{next} =
                 sub {
-                    ref $_[0] ? _callback_next ( $_[0], $param{previous}, $data ) : $_[0];
+                    # "objectify" infinity
+                    if ( ! ref( $_[0] ) )
+                    {
+                        if ( $_[0] == NEG_INFINITY ) {
+                            $_[0] = DateTime::Infinite::Past->new; 
+                        }
+                        elsif ( $_[0] == INFINITY ) {
+                            $_[0] = DateTime::Infinite::Future->new 
+                        }
+                    }
+                    _callback_next ( $_[0], $param{previous}, $data );
                 }
         }
         else
@@ -113,23 +182,17 @@ sub from_recurrence {
             my $next = $param{next};
             $param{next} =
                 sub {
-                    ref $_[0] ? $next->( $_[0]->clone ) : $_[0];
-                }
-        }
-
-        if ( ! $param{current} ) 
-        {
-            $param{current} =
-                sub {
-                    ref $_[0] ? _callback_current ( $_[0], $param{next}, $param{previous} ) : $_[0];
-                }
-        }
-        else
-        {
-            my $current = $param{current};
-            $param{current} =
-                sub {
-                    ref $_[0] ? $current->( $_[0]->clone ) : $_[0];
+                    # "objectify" infinity
+                    if ( ! ref( $_[0] ) )
+                    {
+                        if ( $_[0] == NEG_INFINITY ) {
+                            $_[0] = DateTime::Infinite::Past->new; 
+                        }
+                        elsif ( $_[0] == INFINITY ) {
+                            $_[0] = DateTime::Infinite::Future->new 
+                        }
+                    }
+                    $next->( $_[0]->clone );
                 }
         }
 
@@ -138,18 +201,18 @@ sub from_recurrence {
         $max = INFINITY if $max->is_infinite;
         $min = NEG_INFINITY if $min->is_infinite;
         my $base_set = Set::Infinite::_recurrence->new( $min, $max );
+        $base_set = $base_set->intersection( $param{span}->{set} )
+             if $param{span};
         # warn "base set is $base_set\n";
 
+        my $data = {};
         $self->{set} = 
             $base_set->_recurrence(
                 $param{next}, 
-                $param{current},
-                $param{previous} 
+                $param{previous},
+                $data,
             );
         bless $self, $class;
-
-        return $self->intersection( $param{span} )
-             if $param{span};
     }
     else {
         die "Not enough arguments in from_recurrence()";
@@ -187,14 +250,6 @@ sub clone {
     my $self = bless { %{ $_[0] } }, ref $_[0];
     $self->{set} = $_[0]->{set}->copy;
     return $self;
-}
-
-# default callback that returns the 
-# "current" value (greater or equal) in a callback recurrence.
-#
-sub _callback_current {
-    my ($value, $callback_next, $callback_previous ) = @_;
-    return $callback_next->( $callback_previous->( $value ) );
 }
 
 # default callback that returns the 
@@ -333,7 +388,7 @@ sub previous {
     {
         if ( $self->{set}->_is_recurrence ) 
         {
-            return $self->{set}->{param}[2]->( $_[0] );
+            return $self->{set}->{param}[1]->( $_[0] );
         }
         else 
         {
@@ -356,9 +411,8 @@ sub current {
 
     if ( $self->{set}->_is_recurrence )
     {
-        my $tmp = $self->{set}->{param}[1]->( $_[0] );
-        return $tmp if $tmp == $_[0];
-        return $self->previous( $_[0] );
+        my $tmp = $self->next( $_[0] );
+        return $self->previous( $tmp );
     }
 
     return $_[0] if $self->contains( $_[0] );
@@ -370,6 +424,9 @@ sub closest {
     # return $_[0] if $self->contains( $_[0] );
     my $dt1 = $self->current( $_[0] );
     my $dt2 = $self->next( $_[0] );
+
+    return $dt2 unless defined $dt1;
+    return $dt1 unless defined $dt2;
 
     my $delta = $_[0] - $dt1;
     return $dt1 if ( $dt2 - $delta ) >= $_[0];
@@ -427,7 +484,7 @@ sub intersects {
         {
             for ( $set2, @_ )
             {
-                return 1 if $set1->{set}->{param}[1]->( $_ ) == $_;
+                return 1 if $set1->current( $_ ) == $_;
             }
             return 0;
         }
@@ -445,7 +502,7 @@ sub contains {
         {
             for ( $set2, @_ ) 
             {
-                return 0 unless $set1->{set}->{param}[1]->( $_ ) == $_;
+                return 0 unless $set1->current( $_ ) == $_;
             }
             return 1;
         }
@@ -685,10 +742,10 @@ In this case, both 'next' and 'previous' callbacks must be defined:
 
     my $months = DateTime::Set->from_recurrence(
         next => sub {
+            return $dt if $_[0] < $dt;
             $_[0]->truncate( to => 'month' );
             $_[0]->add( months => 1 );
-            return $_[0] if $_[0] >= $dt;
-            return $dt->clone;
+            return $_[0];
         },
         previous => sub {
             my $param = $_[0]->clone;
@@ -840,7 +897,7 @@ limited by a span.
 
 If a set is specified as a recurrence and has no
 fixed begin and end datetimes, then C<as_list> will return C<undef>
-unless you limit it with a span.  Please note that this is explicitly
+unless you limit it with a span. Please note that this is explicitly
 not an empty list, since an empty list is a valid return value for
 empty sets!
 
@@ -911,9 +968,70 @@ it returns the closest event (previous or next).
 All of these methods may return C<undef> if there is no matching
 datetime in the set.
 
-=item * iterate
+=item * map ( sub { ... } )
 
-I<Experimental method - subject to change.>
+    # example: remove the hour:minute:second information
+    $set = $set2->map( 
+        sub {
+            return $_->truncate( to => day );
+        }
+    );
+
+This method is the "set" version of Perl "map".
+
+It evaluates a subroutine for each element of
+the set (locally setting "$_" to each datetime)
+and returns the set composed of the results of
+each such evaluation.
+
+Like Perl "map", each element of the set
+may produce zero, one, or more elements in the 
+returned value.
+
+Unlike Perl "map", changing "$_" does not change
+the original set. This means that calling map
+in void context has no effect.
+
+The callback subroutine may not be called immediately.
+Don't count on subroutine side-effects. For example,
+a C<print> inside the subroutine may happen later than you expect.
+
+The callback return value is expected to be within the span of the
+C<previous> and the C<next> element in the original set.
+
+For example: given the set C<[ 2001, 2010, 2015 ]>,
+the callback result for the value C<2010> is expected to be
+within the span C<[ 2001 .. 2015 ]>.
+
+=item * grep ( sub { ... } )
+
+    # example: filter out any sundays
+    $set = $set2->grep( 
+        sub {
+            return ( $_->day_of_week != 7 );
+        }
+    );
+
+This method is the "set" version of Perl "grep".
+
+It evaluates a subroutine for each element of
+the set (locally setting "$_" to each datetime)
+and returns the set consisting of those elements 
+for which the expression evaluated to true.
+
+Unlike Perl "grep", changing "$_" does not change
+the original set. This means that calling grep
+in void context has no effect.
+
+Changing "$_" does change the resulting set.
+
+The callback subroutine may not be called immediately.
+Don't count on subroutine side-effects. For example,
+a C<print> inside the subroutine may happen later than you expect.
+
+=item * iterate ( sub { ... } )
+
+I<Internal method - use "map" or "grep" instead.>
 
 This function apply a callback subroutine to all elements of a set
 and returns the resulting set.

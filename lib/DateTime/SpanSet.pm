@@ -8,6 +8,7 @@ use strict;
 
 use DateTime::Set;
 # use DateTime::SpanSet;
+use DateTime::Infinite;
 
 use Carp;
 use Params::Validate qw( validate SCALAR BOOLEAN OBJECT CODEREF ARRAYREF );
@@ -28,6 +29,41 @@ sub iterate {
             $span = $span->{set} 
                 if UNIVERSAL::can( $span, 'union' );
             return $span;
+        }
+    );
+    $return;
+}
+
+sub map {
+    my ( $self, $callback ) = @_;
+    my $class = ref( $self );
+    die "The callback parameter to map() must be a subroutine reference"
+        unless ref( $callback ) eq 'CODE';
+    my $return = $class->empty_set;
+    $return->{set} = $self->{set}->iterate( 
+        sub {
+            local $_ = bless { set => $_[0]->clone }, 'DateTime::Span';
+            my @list = $callback->();
+            my $set = $class->empty_set;
+            $set = $set->union( $_ ) for @list;
+            return $set->{set};
+        }
+    );
+    $return;
+}
+
+sub grep {
+    my ( $self, $callback ) = @_;
+    my $class = ref( $self );
+    die "The callback parameter to grep() must be a subroutine reference"
+        unless ref( $callback ) eq 'CODE';
+    my $return = $class->empty_set;
+    $return->{set} = $self->{set}->iterate( 
+        sub {
+            local $_ = bless { set => $_[0]->clone }, 'DateTime::Span';
+            my $result = $callback->();
+            return $_ if $result;
+            return;
         }
     );
     $return;
@@ -155,14 +191,20 @@ sub next {
 
     if ( @_ )
     {
-        my $max = $_[0];
-        my $open_end = 0;
-        ( $max, $open_end ) = $max->{set}->max_a if UNIVERSAL::can( $max, 'union' );
-        my $span;
-        $span = $open_end ?
-                DateTime::Span->from_datetimes( start => $max ) :
-                DateTime::Span->from_datetimes( after => $max );
-        return $self->intersection( $span )->next;
+        my $max;
+        $max = $_[0]->max if UNIVERSAL::can( $_[0], 'union' );
+        $max = $_[0] if ! defined $max;
+
+        return undef if ! ref( $max ) && $max == INFINITY;
+
+        my $span = DateTime::Span->from_datetimes( start => $max );
+        my $iterator = $self->intersection( $span );
+        my $return = $iterator->next;
+
+        return $return if ! defined $return;
+        return $return if ! $return->intersects( $max );
+
+        return $iterator->next;
     }
 
     my ($head, $tail) = $self->{set}->first;
@@ -183,14 +225,20 @@ sub previous {
 
     if ( @_ )
     {
-        my $min = $_[0];
-        my $open_start = 0;
-        ( $min, $open_start ) = $min->{set}->min_a if UNIVERSAL::can( $min, 'union' );
-        my $span;
-        $span = $open_start ?
-                DateTime::Span->from_datetimes( end => $min ) :
-                DateTime::Span->from_datetimes( before => $min );
-        return $self->intersection( $span )->previous;
+        my $min;
+        $min = $_[0]->min if UNIVERSAL::can( $_[0], 'union' );
+        $min = $_[0] if ! defined $min;
+
+        return undef if ! ref( $min ) && $min == INFINITY;
+
+        my $span = DateTime::Span->from_datetimes( end => $min );
+        my $iterator = $self->intersection( $span );
+        my $return = $iterator->previous;
+
+        return $return if ! defined $return;
+        return $return if ! $return->intersects( $min );
+
+        return $iterator->previous;
     }
 
     my ($head, $tail) = $self->{set}->last;
@@ -201,6 +249,43 @@ sub previous {
     };
     bless $return, 'DateTime::Span';
     return $return;
+}
+
+# "current" means less-or-equal to a DateTime
+sub current {
+    my $self = shift;
+
+    my $return = $self->intersected_spans( $_[0] );
+
+    $return = $self->previous( $_[0] )
+        if ( ! defined $return->max );
+
+    bless $return, 'DateTime::SpanSet'
+        if defined $return;
+    return $return;
+}
+
+sub closest {
+    my $self = shift;
+    my $dt = shift;
+
+    my $dt1 = $self->current( $dt );
+    my $dt2 = $self->next( $dt );
+    bless $dt2, 'DateTime::SpanSet' 
+        if defined $dt2;
+
+    return $dt2 unless defined $dt1;
+    return $dt1 unless defined $dt2;
+
+    $dt = DateTime::Set->from_datetimes( dates => [ $dt ] )
+        unless UNIVERSAL::can( $dt, 'union' );
+
+    return $dt1 if $dt1->contains( $dt );
+
+    my $delta = $dt->min - $dt1->max;
+    return $dt1 if ( $dt2->min - $delta ) >= $dt->max;
+
+    return $dt2;
 }
 
 sub as_list {
@@ -236,45 +321,55 @@ sub as_list {
 # Set::Infinite methods
 
 sub intersection {
-    my ($set1, $set2) = @_;
+    my ($set1, $set2) = ( shift, shift );
     my $class = ref($set1);
     my $tmp = $class->empty_set();
-    $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
+    $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) unless $set2->can( 'union' );
     $tmp->{set} = $set1->{set}->intersection( $set2->{set} );
     return $tmp;
 }
 
-sub intersects {
-    my ($set1, $set2) = @_;
+sub intersected_spans {
+    my ($set1, $set2) = ( shift, shift );
     my $class = ref($set1);
     my $tmp = $class->empty_set();
-    $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
+    $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] )
+        unless $set2->can( 'union' );
+    $tmp->{set} = $set1->{set}->intersected_spans( $set2->{set} );
+    return $tmp;
+}
+
+sub intersects {
+    my ($set1, $set2) = ( shift, shift );
+    my $class = ref($set1);
+    my $tmp = $class->empty_set();
+    $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) unless $set2->can( 'union' );
     return $set1->{set}->intersects( $set2->{set} );
 }
 
 sub contains {
-    my ($set1, $set2) = @_;
+    my ($set1, $set2) = ( shift, shift );
     my $class = ref($set1);
     my $tmp = $class->empty_set();
-    $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
+    $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) unless $set2->can( 'union' );
     return $set1->{set}->contains( $set2->{set} );
 }
 
 sub union {
-    my ($set1, $set2) = @_;
+    my ($set1, $set2) = ( shift, shift );
     my $class = ref($set1);
     my $tmp = $class->empty_set();
-    $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
+    $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) unless $set2->can( 'union' );
     $tmp->{set} = $set1->{set}->union( $set2->{set} );
     return $tmp;
 }
 
 sub complement {
-    my ($set1, $set2) = @_;
+    my ($set1, $set2) = ( shift, shift );
     my $class = ref($set1);
     my $tmp = $class->empty_set();
     if (defined $set2) {
-        $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
+        $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) unless $set2->can( 'union' );
         $tmp->{set} = $set1->{set}->complement( $set2->{set} );
     }
     else {
@@ -303,10 +398,14 @@ sub span {
 # returns a DateTime::Duration
 sub duration { 
     my $dur; 
+
     eval { $dur = $_[0]->{set}->size };
-    return $dur if defined $dur;
     $@ = undef;  # clear the eval() error message
-    return INFINITY;
+
+    return $dur if defined $dur && ref( $dur );
+    return DateTime::Infinite::Future->new -
+           DateTime::Infinite::Past->new;
+    # return INFINITY;
 }
 *size = \&duration;
 
@@ -420,8 +519,9 @@ scalar containing infinity or negative infinity.
 
 =item * duration
 
-The total size of the set, as a C<DateTime::Duration> object, or as a
-scalar containing infinity.
+The total size of the set, as a C<DateTime::Duration> object.
+
+The duration may be infinite.
 
 Also available as C<size()>.
 
@@ -429,18 +529,55 @@ Also available as C<size()>.
 
 The total span of the set, as a C<DateTime::Span> object.
 
-=item * previous / next 
+=item * next 
 
   my $span = $set->next( $dt );
 
-  my $span = $set->previous( $dt );
+This method is used to find the next span in the set,
+after a given datetime or span.
 
-These methods are used to find a set member relative to a given
-datetime or span.
-
-The return value may be C<undef> if there is no matching
+The return value is a C<DateTime::Span>, or C<undef> if there is no matching
 span in the set.
 
+=item * previous 
+
+  my $span = $set->previous( $dt );
+
+This method is used to find the previous span in the set,
+before a given datetime or span.
+
+The return value is a C<DateTime::Span>, or C<undef> if there is no matching
+span in the set.
+
+
+=item * current 
+
+  my $span = $set->current( $dt );
+
+This method is used to find the "current" span in the set,
+that intersects a given datetime or span. If no current span
+is found, then the "previous" span is returned.
+
+The return value is a C<DateTime::SpanSet>, or C<undef> if there is no matching
+span in the set.
+
+If a span parameter is given, it may happen that "current" 
+returns more than one span.
+
+See also: C<intersected_spans()> method.
+
+=item * closest 
+
+  my $span = $set->closest( $dt );
+
+This method is used to find the "closest" span in the set,
+given a datetime or span. 
+
+The return value is a C<DateTime::SpanSet>, or C<undef> if the
+set is empty.
+
+If a span parameter is given, it may happen that "closest" 
+returns more than one span.
 
 =item * as_list
 
@@ -468,6 +605,27 @@ C<DateTime::SpanSet> object.
     $set = $spanset->complement( $set2 );    # like "delete", "remove"
     $set = $spanset->intersection( $set2 );  # like "AND", "while"
     $set = $spanset->complement;             # like "NOT", "negate", "invert"
+
+=item * intersected_spans
+
+This method can accept a C<DateTime> list,
+a C<DateTime::Set>, a C<DateTime::Span>, or a C<DateTime::SpanSet>
+object as an argument.
+
+    $set = $set1->intersected_spans( $set2 );
+
+The method always returns a C<DateTime::SpanSet> object,
+containing all spans that are intersected by the given set.
+
+Unlike the C<intersection> method, the spans are not modified.
+See diagram below:
+
+               set1   [....]   [....]   [....]   [....]
+               set2      [................]
+
+       intersection      [.]   [....]   [.]
+
+  intersected_spans   [....]   [....]   [....]
 
 =item * intersects / contains
 
@@ -514,9 +672,76 @@ C<start_set> retrieves a DateTime::Set with the start datetime of each span.
 
 C<end_set> retrieves a DateTime::Set with the end datetime of each span.
 
+=item * map ( sub { ... } )
+
+    # example: enlarge the spans
+    $set = $set2->map( 
+        sub {
+            my $start = $_->start;
+            my $end = $_->end;
+            return DateTime::Span->from_datetimes(
+                start => $start,
+                before => $end,
+            );
+        }
+    );
+
+This method is the "set" version of Perl "map".
+
+It evaluates a subroutine for each element of
+the set (locally setting "$_" to each DateTime::Span)
+and returns the set composed of the results of
+each such evaluation.
+
+Like Perl "map", each element of the set
+may produce zero, one, or more elements in the 
+returned value.
+
+Unlike Perl "map", changing "$_" does not change
+the original set. This means that calling map
+in void context has no effect.
+
+The callback subroutine may not be called immediately.
+Don't count on subroutine side-effects. For example,
+a C<print> inside the subroutine may happen later than you expect.
+
+The callback return value is expected to be within the span of the
+C<previous> and the C<next> element in the original set.
+
+For example: given the set C<[ 2001, 2010, 2015 ]>,
+the callback result for the value C<2010> is expected to be
+within the span C<[ 2001 .. 2015 ]>.
+
+=item * grep ( sub { ... } )
+
+    # example: filter out all spans happening today
+    my $today = DateTime->today;
+    $set = $set2->grep( 
+        sub {
+            return ( ! $_->contains( $today ) );
+        }
+    );
+
+This method is the "set" version of Perl "grep".
+
+It evaluates a subroutine for each element of
+the set (locally setting "$_" to each DateTime::Span)
+and returns the set consisting of those elements 
+for which the expression evaluated to true.
+
+Unlike Perl "grep", changing "$_" does not change
+the original set. This means that calling grep
+in void context has no effect.
+
+Changing "$_" does change the resulting set.
+
+The callback subroutine may not be called immediately.
+Don't count on subroutine side-effects. For example,
+a C<print> inside the subroutine may happen later than you expect.
+
 =item * iterate
 
-I<Experimental method - subject to change.>
+I<Internal method - use "map" or "grep" instead.>
 
 This function apply a callback subroutine to all elements of a set
 and returns the resulting set.
@@ -524,29 +749,10 @@ and returns the resulting set.
 The parameter C<$_[0]> to the callback subroutine is a C<DateTime::Span>
 object.
 
-    [TODO - fix example]
-
-    sub callback {
-        $_[0]->add( hours => 1 );
-    }
-
-    # $set2 elements are one hour after $set elements, and
-    # $set is unchanged
-    $set2 = $set->iterate( \&callback );
-
 If the callback returns C<undef>, the datetime is removed from the set:
 
     sub remove_sundays {
         $_[0] unless $_[0]->start->day_of_week == 7;
-    }
-
-The callback can be used to postpone or anticipate
-events which collide with datetimes in another set:
-
-    [TODO - fix example]
-
-    sub after_holiday {
-        $_[0]->add( days => 1 ) while $holidays->contains( $_[0] );
     }
 
 The callback return value is expected to be within the span of the
