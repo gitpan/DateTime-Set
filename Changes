@@ -1,5 +1,43 @@
 Changes for DateTime::Set
 
+0.1603  2004-07-05
+- revised documentation, some examples were rewritten.
+- deprecate "iterate" method
+- Build.PM requires Set::Infinite 0.59 - reported by Tim Muller-Seydlitz
+
+0.1602  2004-07-02
+- fixed time zone handling in the methods:
+  set_time_zone
+  next/previous/closest/current
+
+- removed limitation of duration size in methods:
+  add/add_duration
+  subtract/subtract_duration
+
+- requires Set::Infinite 0.59 - uses iterate() experimental 
+  argument "backtrack_callback"
+
+- the following methods are now mutators:
+  set_time_zone( $tz )
+  set( locale => $locale )
+  add( unit => $n )
+  add_duration( $dur )
+  subtract( unit => $n )
+  subtract_duration( $dur )
+
+- fixed max/min of an infinite SpanSet
+- added test for infinite duration
+
+- from_recurrence() code cleanup
+
+- parameter checking: The 'dates' argument to from_datetimes() 
+  must be a list of DateTime objects
+
+0.1601  2004-03-30
+- more parameter checking;
+  Sets should interoperate better with objects of 
+  type DateTime::Event::* and DateTime::Incomplete
+
 0.16  2004-03-29
 - Makefile.PL skips processing of "Build.PL"
   Reported by Reinhold May

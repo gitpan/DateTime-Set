@@ -7,7 +7,6 @@ package DateTime::SpanSet;
 use strict;
 
 use DateTime::Set;
-# use DateTime::SpanSet;
 use DateTime::Infinite;
 
 use Carp;
@@ -80,17 +79,26 @@ sub set_time_zone {
             $tmp{a} = $tmp{a}->clone->set_time_zone( $tz ) if ref $tmp{a};
             $tmp{b} = $tmp{b}->clone->set_time_zone( $tz ) if ref $tmp{b};
             \%tmp;
-        }
+        },
+        backtrack_callback => sub {
+            my ( $min, $max ) = ( $_[0]->min, $_[0]->max );
+            if ( ref($min) )
+            {
+                $min = $min->clone;
+                $min->set_time_zone( $tz );
+            }
+            if ( ref($max) )
+            {
+                $max = $max->clone;
+                $max->set_time_zone( $tz );
+            }
+            return Set::Infinite::_recurrence->new( $min, $max );
+        },
     );
 
     ### this code enables 'subroutine method' behaviour
-    # $self->{set} = $result;
-    # return $self;
-
-    ### this code enables 'function method' behaviour
-    my $set = $self->clone;
-    $set->{set} = $result;
-    return $set;
+    $self->{set} = $result;
+    return $self;
 }
 
 sub from_spans {
@@ -111,11 +119,17 @@ sub from_spans {
 }
 
 sub from_set_and_duration {
-    # die "from_set_and_duration() not implemented yet";
     # set => $dt_set, days => 1
     my $class = shift;
     my %args = @_;
-    my $set = delete $args{set} || carp "from_set_and_duration needs a set parameter";
+    my $set = delete $args{set} || 
+        carp "from_set_and_duration needs a 'set' parameter";
+
+    $set = $set->as_set
+        if UNIVERSAL::can( $set, 'as_set' );
+    unless ( UNIVERSAL::can( $set, 'union' ) ) {
+        carp "'set' must be a set" };
+
     my $duration = delete $args{duration} ||
                    new DateTime::Duration( %args );
     my $end_set = $set->clone->add_duration( $duration );
@@ -127,18 +141,31 @@ sub from_sets {
     my $class = shift;
     my %args = validate( @_,
                          { start_set =>
-                           { can => 'union',
+                           { # can => 'union',
                              optional => 0,
                            },
                            end_set =>
-                           { can => 'union',
+                           { # can => 'union',
                              optional => 0,
                            },
                          }
                        );
+    my $start_set = delete $args{start_set};
+    my $end_set   = delete $args{end_set};
+
+    $start_set = $start_set->as_set
+        if UNIVERSAL::can( $start_set, 'as_set' );
+    $end_set = $end_set->as_set
+        if UNIVERSAL::can( $end_set, 'as_set' );
+
+    unless ( UNIVERSAL::can( $start_set, 'union' ) ) {
+        carp "'start_set' must be a set" };
+    unless ( UNIVERSAL::can( $end_set, 'union' ) ) {
+        carp "'end_set' must be a set" };
+
     my $self;
-    $self->{set} = $args{start_set}->{set}->until( 
-                   $args{end_set}->{set} );
+    $self->{set} = $start_set->{set}->until( 
+                   $end_set->{set} );
     bless $self, $class;
     return $self;
 }
@@ -324,7 +351,12 @@ sub intersection {
     my ($set1, $set2) = ( shift, shift );
     my $class = ref($set1);
     my $tmp = $class->empty_set();
-    $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) unless $set2->can( 'union' );
+    $set2 = $set2->as_spanset
+        if $set2->can( 'as_spanset' );
+    $set2 = $set2->as_set
+        if $set2->can( 'as_set' );
+    $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) 
+        unless $set2->can( 'union' );
     $tmp->{set} = $set1->{set}->intersection( $set2->{set} );
     return $tmp;
 }
@@ -333,6 +365,10 @@ sub intersected_spans {
     my ($set1, $set2) = ( shift, shift );
     my $class = ref($set1);
     my $tmp = $class->empty_set();
+    $set2 = $set2->as_spanset
+        if $set2->can( 'as_spanset' );
+    $set2 = $set2->as_set
+        if $set2->can( 'as_set' );
     $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] )
         unless $set2->can( 'union' );
     $tmp->{set} = $set1->{set}->intersected_spans( $set2->{set} );
@@ -343,7 +379,12 @@ sub intersects {
     my ($set1, $set2) = ( shift, shift );
     my $class = ref($set1);
     my $tmp = $class->empty_set();
-    $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) unless $set2->can( 'union' );
+    $set2 = $set2->as_spanset
+        if $set2->can( 'as_spanset' );
+    $set2 = $set2->as_set
+        if $set2->can( 'as_set' );
+    $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) 
+        unless $set2->can( 'union' );
     return $set1->{set}->intersects( $set2->{set} );
 }
 
@@ -351,7 +392,12 @@ sub contains {
     my ($set1, $set2) = ( shift, shift );
     my $class = ref($set1);
     my $tmp = $class->empty_set();
-    $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) unless $set2->can( 'union' );
+    $set2 = $set2->as_spanset
+        if $set2->can( 'as_spanset' );
+    $set2 = $set2->as_set
+        if $set2->can( 'as_set' );
+    $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) 
+        unless $set2->can( 'union' );
     return $set1->{set}->contains( $set2->{set} );
 }
 
@@ -359,7 +405,12 @@ sub union {
     my ($set1, $set2) = ( shift, shift );
     my $class = ref($set1);
     my $tmp = $class->empty_set();
-    $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) unless $set2->can( 'union' );
+    $set2 = $set2->as_spanset
+        if $set2->can( 'as_spanset' );
+    $set2 = $set2->as_set
+        if $set2->can( 'as_set' );
+    $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) 
+        unless $set2->can( 'union' );
     $tmp->{set} = $set1->{set}->union( $set2->{set} );
     return $tmp;
 }
@@ -369,7 +420,12 @@ sub complement {
     my $class = ref($set1);
     my $tmp = $class->empty_set();
     if (defined $set2) {
-        $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) unless $set2->can( 'union' );
+        $set2 = $set2->as_spanset
+            if $set2->can( 'as_spanset' );
+        $set2 = $set2->as_set
+            if $set2->can( 'as_set' );
+        $set2 = DateTime::Set->from_datetimes( dates => [ $set2, @_ ] ) 
+            unless $set2->can( 'union' );
         $tmp->{set} = $set1->{set}->complement( $set2->{set} );
     }
     else {
@@ -378,14 +434,12 @@ sub complement {
     return $tmp;
 }
 
-sub min { 
-    my $tmp = $_[0]->{set}->min;
-    ref($tmp) ? $tmp->clone : $tmp; 
+sub min {
+    return DateTime::Set::_fix_datetime( $_[0]->{set}->min );
 }
 
 sub max { 
-    my $tmp = $_[0]->{set}->max;
-    ref($tmp) ? $tmp->clone : $tmp; 
+    return DateTime::Set::_fix_datetime( $_[0]->{set}->max );
 }
 
 # returns a DateTime::Span
@@ -509,9 +563,9 @@ the local time are made, except to account for leap seconds.  If the
 new time zone is floating, then the I<UTC> time is adjusted in order
 to leave the local time untouched.
 
-The method returns a new object.
+=item * min
 
-=item * min / max
+=item * max
 
 First or last dates in the set.  These methods may return C<undef> if
 the set is empty.  It is also possible that these methods may return a
@@ -594,7 +648,11 @@ unless you limit it with a span.  Please note that this is explicitly
 not an empty list, since an empty list is a valid return value for
 empty sets!
 
-=item * union / intersection / complement
+=item * union
+
+=item * intersection
+
+=item * complement
 
 Set operations may be performed not only with C<DateTime::SpanSet>
 objects, but also with C<DateTime>, C<DateTime::Set> and
@@ -627,7 +685,9 @@ See diagram below:
 
   intersected_spans   [....]   [....]   [....]
 
-=item * intersects / contains
+=item * intersects
+
+=item * contains
 
 These set functions return a boolean value.
 

@@ -3,7 +3,7 @@
 use strict;
 
 use Test::More;
-plan tests => 10;
+plan tests => 14;
 
 use DateTime;
 use DateTime::Set;
@@ -59,6 +59,61 @@ my $original = $t1->datetime . ' ' .
 
 is( $str, '2001-12-01T00:00:00 Asia/Taipei', 'recurrence with time zone' );
 is( $original, '2001-11-22T00:00:00 floating', 'does not mutate arg' );
+
+
+{
+  my $str;
+
+  my $dt_floating = new DateTime( 
+      year => 2001, month => 11, day => 1
+  );
+  my $dt_with_tz  = $dt_floating->clone->set_time_zone( 'America/Sao_Paulo' );
+
+  my $set_floating = DateTime::Set->from_recurrence(
+       recurrence => sub {
+                         $_[0]->truncate( to => 'month' )->add( months => 1 );
+                      }
+  );
+  my $set_with_tz = $set_floating->clone->set_time_zone( 'Asia/Taipei' );
+
+  # tests with the "next" method
+
+  # floating set => floating dt
+      is( $set_floating->next( $dt_floating )->
+          strftime( "%FT%H:%M:%S %{time_zone_long_name}"),
+          '2001-12-01T00:00:00 floating',
+          'recurrence without time zone, arg without time zone' );
+  # tz set => floating dt
+      is( $set_with_tz->next( $dt_floating )->
+          strftime( "%FT%H:%M:%S %{time_zone_long_name}"),
+          '2001-12-01T00:00:00 Asia/Taipei',
+          'recurrence with time zone, arg without time zone' );
+  # floating set => tz dt
+      is( $set_floating->next( $dt_with_tz )->
+          strftime( "%FT%H:%M:%S %{time_zone_long_name}"),
+          '2001-12-01T00:00:00 America/Sao_Paulo',
+          'recurrence with time zone, arg without time zone' );
+
+  # TODO: {
+  #  local $TODO = "Time zone settings do not backtrack";
+  # bug reported by Tim Mueller-Seydlitz
+
+  # tz set => tz dt
+      is( $set_with_tz->next( $dt_with_tz )->
+          strftime( "%FT%H:%M:%S %{time_zone_long_name}"),
+          # = '2001-12-01T00:00:00 Asia/Taipei',
+          '2001-11-30T14:00:00 America/Sao_Paulo',
+          'recurrence with time zone, arg with time zone' );
+  # } 
+
+    # TODO: limit set_floating with a start=>dt_floating;
+    #       ask for next( dt_with_tz_before_start ) 
+    #       and next( dt_with_another_tz_before_start )
+    #       and next( dt_floating_before_start )
+    #       and check for caching problems
+
+}
+
 
 # set locale, add duration
 is ( $months->clone->add( days => 1 )->

@@ -19,7 +19,7 @@ $VERSION = $DateTime::Set::VERSION;
 sub set_time_zone {
     my ( $self, $tz ) = @_;
 
-    my $result = $self->{set}->iterate( 
+    $self->{set} = $self->{set}->iterate( 
         sub {
             my %tmp = %{ $_[0]->{list}[0] };
             $tmp{a} = $tmp{a}->clone->set_time_zone( $tz ) if ref $tmp{a};
@@ -27,15 +27,7 @@ sub set_time_zone {
             \%tmp;
         }
     );
-
-    ### this code enables 'subroutine method' behaviour
-    $self->{set} = $result;
     return $self;
-
-    ### this code enables 'function method' behaviour
-    # my $set = $self->clone;
-    # $set->{set} = $result;
-    # return $set;
 }
 
 # note: the constructor must clone its DateTime parameters, such that
@@ -170,7 +162,12 @@ sub intersection {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
     my $tmp = {};  # $class->new();
-    $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
+    $set2 = $set2->as_spanset
+        if $set2->can( 'as_spanset' );
+    $set2 = $set2->as_set
+        if $set2->can( 'as_set' );
+    $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) 
+        unless $set2->can( 'union' );
     $tmp->{set} = $set1->{set}->intersection( $set2->{set} );
 
     # intersection() can generate something more complex than a span.
@@ -182,14 +179,24 @@ sub intersection {
 sub intersects {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
-    $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
+    $set2 = $set2->as_spanset
+        if $set2->can( 'as_spanset' );
+    $set2 = $set2->as_set
+        if $set2->can( 'as_set' );
+    $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) 
+        unless $set2->can( 'union' );
     return $set1->{set}->intersects( $set2->{set} );
 }
 
 sub contains {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
-    $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
+    $set2 = $set2->as_spanset
+        if $set2->can( 'as_spanset' );
+    $set2 = $set2->as_set
+        if $set2->can( 'as_set' );
+    $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) 
+        unless $set2->can( 'union' );
     return $set1->{set}->contains( $set2->{set} );
 }
 
@@ -197,7 +204,12 @@ sub union {
     my ($set1, $set2) = @_;
     my $class = ref($set1);
     my $tmp = {};   # $class->new();
-    $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
+    $set2 = $set2->as_spanset
+        if $set2->can( 'as_spanset' );
+    $set2 = $set2->as_set
+        if $set2->can( 'as_set' );
+    $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) 
+        unless $set2->can( 'union' );
     $tmp->{set} = $set1->{set}->union( $set2->{set} );
  
     # union() can generate something more complex than a span.
@@ -216,7 +228,12 @@ sub complement {
     my $class = ref($set1);
     my $tmp = {};   # $class->new;
     if (defined $set2) {
-        $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) unless $set2->can( 'union' );
+        $set2 = $set2->as_spanset
+            if $set2->can( 'as_spanset' );
+        $set2 = $set2->as_set
+            if $set2->can( 'as_set' );
+        $set2 = DateTime::Set->from_datetimes( dates => [ $set2 ] ) 
+            unless $set2->can( 'union' );
         $tmp->{set} = $set1->{set}->complement( $set2->{set} );
     }
     else {
@@ -235,29 +252,13 @@ sub complement {
 }
 
 sub start { 
-    my $tmp = $_[0]->{set}->min;
-    if ( ref($tmp) ) {
-        $tmp = $tmp->clone;
-    } 
-    else
-    {
-        $tmp = new DateTime::Infinite::Past if $tmp == NEG_INFINITY;
-    }
-    $tmp;
+    return DateTime::Set::_fix_datetime( $_[0]->{set}->min );
 }
 
 *min = \&start;
 
 sub end { 
-    my $tmp = $_[0]->{set}->max;
-    if ( ref($tmp) ) {
-        $tmp = $tmp->clone;
-    } 
-    else
-    {
-        $tmp = new DateTime::Infinite::Future if $tmp == INFINITY;
-    }
-    $tmp;
+    return DateTime::Set::_fix_datetime( $_[0]->{set}->max );
 }
 
 *max = \&end;
@@ -290,7 +291,10 @@ sub duration {
     # TODO: shouldn't need this:
 
     $@ = undef;  # clear the eval() error message
-    return INFINITY;
+
+    return DateTime::Infinite::Future->new -
+           DateTime::Infinite::Past->new;
+    # return INFINITY;
 }
 *size = \&duration;
 
@@ -395,7 +399,9 @@ scalar containing infinity.
 
 Also available as C<size()>.
 
-=item * start / end
+=item * start
+
+=item * end
 
 First or last dates in the span.  
 
@@ -412,15 +418,23 @@ in this case C<$dt> is not a set element - but it is a set boundary.
 # scalar containing either negative infinity
 # or positive infinity.
 
-=item * start_is_closed / end_is_closed
+=item * start_is_closed
+
+=item * end_is_closed
 
 Returns true if the first or last dates belong to the span ( begin <= x <= end ).
 
-=item * start_is_open / end_is_open
+=item * start_is_open
+
+=item * end_is_open
 
 Returns true if the first or last dates are excluded from the span ( begin < x < end ).
 
-=item * union / intersection / complement
+=item * union
+
+=item * intersection
+
+=item * complement
 
 Set operations may be performed not only with C<DateTime::Span>
 objects, but also with C<DateTime::Set> and C<DateTime::SpanSet>
@@ -432,7 +446,9 @@ object.
     $set = $span->intersection( $set2 );  # like "AND", "while"
     $set = $span->complement;             # like "NOT", "negate", "invert"
 
-=item * intersects / contains
+=item * intersects
+
+=item * contains
 
 These set functions return a boolean value.
 
