@@ -12,28 +12,31 @@ $Set::Infinite::PRETTY_PRINT = 1;   # enable Set::Infinite debug
 
 use vars qw( @ISA $VERSION );
 
-# $VERSION = '0.00_13';
-
-sub new {
+sub from_spans {
     my $class = shift;
     my %args = validate( @_,
                          { spans =>
-                           { type => ARRAY,
+                           { type => ARRAYREF,
                              optional => 1,
                            },
-                           # sets =>
-                           # { type => ARRAY,
-                           #   optional => 1,
-                           # },
                          }
                        );
     my $self = {};
     my $set = Set::Infinite->new();
     $set = $set->union( $_->{set} ) for @{ $args{spans} };
-    # $set = $set->union( $_->{set} ) for @{ $args{sets} };
     $self->{set} = $set;
     bless $self, $class;
     return $self;
+}
+
+*new = \&from_spans;
+
+sub from_set_and_duration {
+    die "from_set_and_duration() not implemented yet";
+}
+
+sub from_sets {
+    die "from_sets() not implemented yet";
 }
 
 sub clone { 
@@ -51,10 +54,19 @@ sub iterator {
 # next() gets the next element from an iterator()
 sub next {
     my ($self) = shift;
+
+    # TODO: this is fixing an error from elsewhere
+    # - find out what's going on! (with "sunset.pl")
+    return undef unless defined $self->{set};
+
     my ($head, $tail) = $self->{set}->first;
     $self->{set} = $tail;
-    bless $head, 'DateTime::Span' if ref $head;
-    return $head;
+    return $head unless ref $head;
+    my $return = {
+        set => $head,
+    };
+    bless $return, 'DateTime::Span';
+    return $return;
 }
 
 # Set::Infinite methods
@@ -120,7 +132,8 @@ sub max {
 # returns a DateTime::Span
 sub span { 
   my $set = $_[0]->{set}->span;
-  bless $set, 'DateTime::Span';
+  my $self = { set => $set };
+  bless $self, 'DateTime::Span';
   return $set;
 }
 
@@ -165,21 +178,48 @@ DateTime::SpanSet - set of DateTime spans
 
 =head1 DESCRIPTION
 
-DateTime::SpanSet is a module for sets of date/time spans or time-ranges. 
+DateTime::SpanSet is a class that represents sets of datetime spans.
+An example would be a recurring meeting that occurs from 13:00-15:00
+every Friday.
 
 =head1 METHODS
 
 =over 4
 
-=item * new 
+=item * from_spans
 
-Creates a new span set. 
+Creates a new span set from one or more C<DateTime::Span> objects.
 
-   $dates = DateTime::SpanSet->new( spans => [ $dt_span ] );  # from DateTime::Span
+   $dates = DateTime::SpanSet->from_spans( spans => [ $dt_span ] );
 
-   $dates = DateTime::SpanSet->new( sets => [ $dt_set ] );    # from DateTime::Set
+=item * from_set_and_duration
 
-=back
+Creates a new span set from one or more C<DateTime::Set> objects and a
+duration.
+
+The duration can be a C<DateTime::Duration> object, or the parameters
+to create a new C<DateTime::Duration> object, such as "days",
+"months", etc.
+
+   $dates = DateTime::SpanSet->from_set_and_duration( set => $dt_set, days => 1 );
+
+=item * from_sets
+
+Creates a new span set from two C<DateTime::Set> objects.
+
+One set defines the I<starting dates>, and the other defines the I<end
+dates>.
+
+   $dates = DateTime::SpanSet->from_sets( start_set => $dt_set1, end_set => $dt_set2 );
+
+The spans have the starting date C<closed>, and the end date C<open>,
+like in C<[$dt1, $dt2)>.
+
+If an end date comes without a starting date before it, then it
+defines a span like C<(-inf, $dt)>.
+
+If a starting date comes without an end date after it, then it defines
+a span like C<[$dt, inf)>.
 
 =item * min / max
 
@@ -187,13 +227,13 @@ First or last dates in the set.
 
 =item * size
 
-The total size of the set, as a DateTime::Duration.
+The total size of the set, as a C<DateTime::Duration> object.
 
 This is the sum of the durations of all spans.
 
 =item * span
 
-The total span of the set, as a DateTime::Span.
+The total span of the set, as a C<DateTime::Span> object.
 
 =item * union / intersection / complement
 

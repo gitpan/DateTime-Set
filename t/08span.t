@@ -8,22 +8,19 @@ use DateTime::Duration;
 use DateTime::Set;
 
 #======================================================================
-# ADD_DURATION ("OFFSET") TESTS
+# SPAN TESTS
 #====================================================================== 
 
 my $t1 = new DateTime( year => '1810', month => '11', day => '22' );
 my $t2 = new DateTime( year => '1900', month => '11', day => '22' );
-my $s1 = new DateTime::Set( dates => [ $t1, $t2 ] );
+my $s1 = DateTime::Span->from_datetime_and_duration( start => $t1, hours => 2 );
 
-my $dur1 = new DateTime::Duration ( years => 1 );
-my $s2 = $s1->add( duration => $dur1 );
-
-ok( $s2->min->ymd eq '1811-11-22', 
-    'got 1811-11-22 - min' );
-
-$s2 = $s2->add( months => 1 );
-ok( $s2->min->ymd eq '1811-12-22',
-    'got 1811-12-22 - min' );
+my $res = $s1->min->ymd.'T'.$s1->min->hms;
+ok( $res eq '1810-11-22T00:00:00',
+    "got $res - min" );
+$res = $s1->max->ymd.'T'.$s1->max->hms;
+ok( $res eq '1810-11-22T02:00:00',
+    "got $res - max" );
 
 1;
 

@@ -20,7 +20,7 @@ use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
 # note: the constructor must clone its DateTime parameters, such that
 # the set elements become immutable
-sub new {
+sub from_datetimes {
     my $class = shift;
     my %args = validate( @_,
                          { start =>
@@ -65,7 +65,7 @@ sub new {
         if ( $start > $end ) {
             die "Span cannot start after the end in DateTime::Span->new\n";
         }
-        my $set = Set::Infinite->new( $start, $end );
+        $set = Set::Infinite->new( $start, $end );
         if ( $start != $end ) {
             # remove start, such that we have ">" instead of ">="
             $set = $set->complement( $start ) if $open_start;  
@@ -77,6 +77,47 @@ sub new {
     $self->{set} = $set;
     bless $self, $class;
     return $self;
+}
+
+*new = \&from_datetimes;
+
+sub from_datetime_and_duration {
+    my $self = shift;
+    my %args = @_;
+    my %date;
+    # extract datetime parameters
+    for ( qw( start end before after ) ) {
+        $date{$_} = delete $args{$_} if exists $args{$_};
+    }
+    my ($key) = keys %date;
+    my $dt = $date{$key};
+    # extract duration parameters
+    my ($duration_key) = keys %args;
+    my $dt_duration;
+    # warn "args: $key - $duration_key - @{[ %args ]}";
+    if ($duration_key eq 'duration') {
+        $dt_duration = $args{$duration_key};
+    }
+    else {
+        $dt_duration = DateTime::Duration->new( %args );
+    }
+    # warn "Creating span from $key => ".$dt->datetime." and $dt_duration";
+    my $other_date = $dt->clone->add_duration( $dt_duration );
+    # warn "Creating span from $key => ".$dt->datetime." and ".$other_date->datetime;
+    my $other_key;
+    if ( $dt_duration->is_positive ) {
+        # check if have to invert keys
+        $key = 'after' if $key eq 'end';
+        $key = 'start' if $key eq 'before';
+        $other_key = 'before';
+    }
+    else {
+        # check if have to invert keys
+        $other_key = 'end' if $key eq 'after';
+        $other_key = 'before' if $key eq 'start';
+        $key = 'start';
+    }
+    return $self->new( $key => $dt, $other_key => $other_date ); 
 }
 
 sub clone { 
@@ -162,10 +203,14 @@ sub start {
     ref($tmp) ? $tmp->clone : $tmp; 
 }
 
+*min = \&start;
+
 sub end { 
     my $tmp = $_[0]->{set}->max;
     ref($tmp) ? $tmp->clone : $tmp; 
 }
+
+*max = \&end;
 
 sub start_is_open {
     # min_a returns info about the set boundary 
@@ -209,7 +254,7 @@ DateTime::Span - Date/time spans
 
     $date1 = DateTime->new( year => 2002, month => 3, day => 11 );
     $date2 = DateTime->new( year => 2003, month => 4, day => 12 );
-    $set2 = DateTime::Span->new( start => $date1, end => $date2 );
+    $set2 = DateTime::Span->from_datetimes( start => $date1, end => $date2 );
     #  set2 = 2002-03-11 until 2003-04-12
 
     $set = $set1->union( $set2 );         # like "OR", "insert", "both"
@@ -232,9 +277,9 @@ DateTime::Span is a module for date/time spans or time-ranges.
 
 =over 4
 
-=item * new 
+=item * from_datetimes
 
-Generates a new span. 
+Creates a new span. 
 
 A 'closed' span includes its end-dates:
 
@@ -261,12 +306,23 @@ You cannot give both a "start" and "after" argument, nor can you give
 both an "end" and "before" argument.  Either of these conditions cause
 will cause the C<new()> method to die.
 
-=back
+=item * from_datetime_and_duration
+
+Creates a new span.
+
+   $dates = DateTime::Set->from_datetime_and_duration( 
+       start => $dt1, duration => $dt_dur1 );
+   $dates = DateTime::Set->from_datetime_and_duration( 
+       after => $dt1, hours => 12 );
+
+The new "end of the set" is I<open> by default.
 
 =item * duration
 
 Return a DateTime::Duration object that represents the length of the
 span.
+
+This is the sum of the durations of all spans.
 
 =item * start / end
 
@@ -279,12 +335,6 @@ Return true if the first or last dates belong to the span ( begin <= x <= end ).
 =item * start_is_open / end_is_open
 
 Return true if the first or last dates are out of the span ( begin < x < end ).
-
-=item * duration
-
-The duration of the span, as a DateTime::Duration.
-
-This is the sum of the durations of all spans.
 
 =item * union / intersection / complement
 
@@ -301,6 +351,8 @@ These set functions result in a boolean value.
 
     if ( $set1->intersects( $set2 ) ) { ...  # like "touches", "interferes"
     if ( $set1->contains( $set2 ) ) { ...    # like "is-fully-inside"
+
+=back
 
 =head1 SUPPORT
 
