@@ -1,5 +1,9 @@
 Changes for DateTime::Set
 
+0.17    2004-08-17
+- bugfix: it was trying to set the time zone of an "undef" value; 
+  this has broken some DT::Event::Recurrence tests - reported by Bill Moseley
+
 0.1603  2004-07-05
 - revised documentation, some examples were rewritten.
 - deprecate "iterate" method

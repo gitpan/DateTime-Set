@@ -1,32 +1,13 @@
---- #YAML:1.0
-name: DateTime-Set
-version: 0.1603
-author:
-  - Flavio S. Glock <fglock@pucrs.br>
-abstract: DateTime set objects
-license: perl
+# http://module-build.sourceforge.net/META-spec.html
+#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
+name:         DateTime-Set
+version:      0.17
+version_from: lib/DateTime/Set.pm
+installdirs:  site
 requires:
-  DateTime: 0.12
-  Params::Validate: 0
-  Set::Infinite: 0.59
-  Test::More: 0
-conflicts:
-  DateTime::Event::Chinese: '< 0'
-  DateTime::Event::Cron: '<= 0.06'
-  DateTime::Event::ICal: '< 0.07'
-  DateTime::Event::Lunar: '< 0'
-  DateTime::Event::Random: '< 0.03'
-  DateTime::Event::Recurrence: '< 0.10'
-  DateTime::Event::SolarTerm: '< 0'
-  DateTime::Event::Sunrise: '<= 0.05'
-provides:
-  DateTime::Set:
-    file: lib/DateTime/Set.pm
-    version: 0.1603
-  DateTime::Span:
-    file: lib/DateTime/Span.pm
-  DateTime::SpanSet:
-    file: lib/DateTime/SpanSet.pm
-  Set::Infinite::_recurrence:
-    file: lib/Set/Infinite/_recurrence.pm
-generated_by: Module::Build version 0.23
+    DateTime:                      0.12
+    Set::Infinite:                 0.59
+    Test::More:                    0
+
+distribution_type: module
+generated_by: ExtUtils::MakeMaker version 6.17
