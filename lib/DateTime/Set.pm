@@ -1,145 +1,3 @@
-# Copyright (c) 2003 Flavio Soibelmann Glock. All rights reserved.
-# This program is free software; you can redistribute it and/or
-# modify it under the same terms as Perl itself.
-
-package Set::Infinite::_recurrence;
-
-use strict;
-
-use constant INFINITY     =>       100 ** 100 ** 100 ;
-use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
-
-use vars qw( @ISA $PRETTY_PRINT );
-
-@ISA = qw( Set::Infinite );
-use Set::Infinite 0.5305;
-
-BEGIN {
-    $PRETTY_PRINT = 1;   # enable Set::Infinite debug
-
-    # TODO: inherit %Set::Infinite::_first / _last 
-    #       in a more "object oriented" way
-
-    $Set::Infinite::_first{_recurrence} = 
-        sub {
-            my $self = $_[0];
-            my ($callback_next, $callback_current) = @{ $self->{param} };
-            my ($min, $min_open) = $self->{parent}->min_a;
-            if ( $min_open )
-            {
-                $min = $callback_next->( $min );
-            }
-            else
-            {
-                $min = $callback_current->( $min );
-            }
-            return ( $self->new( $min ),
-                     $self->new( $callback_next->( $min ), 
-                                 $self->{parent}->max )->
-                          _function( '_recurrence', @{ $self->{param} } ) );
-        };
-    $Set::Infinite::_last{_recurrence} =
-        sub {
-            my $self = $_[0];
-            my (undef, $callback_current, $callback_previous) = @{ $self->{param} };
-            my ($max, $max_open) = $self->{parent}->max_a;
-            if ( $max_open )
-            {
-                $max = $callback_previous->( $max );
-            }
-            else
-            {
-                $max = $callback_current->( $max );
-                $max = $callback_previous->( $max ) 
-                    if $max > $self->{parent}->max;
-            }
-            return ( $self->new( $max ),
-                     $self->new( $self->{parent}->min, 
-                                 $callback_previous->( $max ) )->
-                          _function( '_recurrence', @{ $self->{param} } ) );
-        };
-}
-
-# $si->_recurrence(
-#     \&callback_next, \&callback_current, \&callback_previous )
-#
-# Generates "recurrences" from a callback.
-# These recurrences are simple lists of dates.
-#
-# The recurrence generation is based on an idea from Dave Rolsky.
-#
-sub _recurrence { 
-    my $set = shift;
-    my ( $callback_next, $callback_current, $callback_previous ) = @_;
-    if ( $#{ $set->{list} } != 0 || $set->is_too_complex )
-    {
-        return $set->iterate( 
-            sub { 
-                $_[0]->_recurrence( 
-                    $callback_next, $callback_current, $callback_previous ) 
-            } );
-    }
-    # $set is a span
-    my $result;
-    if ($set->min != NEG_INFINITY && $set->max != INFINITY)
-    {
-        # print STDERR " finite set\n";
-        my ($min, $min_open) = $set->min_a;
-        my ($max, $max_open) = $set->max_a;
-        if ( $min_open )
-        {
-            $min = $callback_next->( $min );
-        }
-        else
-        {
-            $min = $callback_current->( $min );
-        }
-        if ( $max_open )
-        {
-            $max = $callback_previous->( $max );
-        }
-        else
-        {
-            $max = $callback_current->( $max );
-            $max = $callback_previous->( $max ) if $max > $set->max;
-        }
-        return $set->new( $min ) if $min == $max;
-        $result = $set->new();
-        for ( 1 .. 200 ) 
-        {
-            return $result if $min > $max;
-            push @{ $result->{list} }, { a => $min, b => $min };
-            $min = $callback_next->( $min );
-        } 
-        return $result if $min > $max;
-        # warn "BIG set";
-    }
-
-    # return a "_function", such that we can backtrack later.
-    my $func = $set->_function( '_recurrence', @_ );
-    return $func->_function2( 'union', $result ) if $result;
-    return $func;
-}
-
-sub intersection
-{
-    my ($s1, $s2) = (shift,shift);
-    if ( $s1->is_too_complex && 
-         $s1->{method} eq '_recurrence' ) 
-    {
-        unless( ref($s1) eq ref($s2) )
-        {
-            $s2 = $s1->new( $s2, @_ );
-            @_ = ();
-        }
-        unless( $s2->is_too_complex ) 
-        {
-            my $inter = $s1->{parent} ->intersection( $s2 );
-            return $inter->_recurrence( @{ $s1->{param} } );
-        }
-    }
-    return $s1->SUPER::intersection( $s2, @_ );
-}
 
 package DateTime::Set;
 
@@ -149,17 +7,20 @@ use Params::Validate qw( validate SCALAR BOOLEAN OBJECT CODEREF ARRAYREF );
 use DateTime 0.12;  # this is for version checking only
 use DateTime::Duration;
 use DateTime::Span;
-use Set::Infinite 0.50;  
+use Set::Infinite 0.5307;
+use Set::Infinite::_recurrence;
 
-use vars qw( $VERSION $neg_nanosecond );
+use vars qw( $VERSION $neg_nanosecond $forever );
 
 use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
 BEGIN {
-    $VERSION = '0.1202';
+    $VERSION = '0.1203';
     $neg_nanosecond = DateTime::Duration->new( nanoseconds => -1 );
 }
+
+$forever = Set::Infinite::_recurrence->new( NEG_INFINITY, INFINITY );
 
 sub add { shift->add_duration( DateTime::Duration->new(@_) ) }
 
@@ -182,7 +43,6 @@ sub add_duration {
     ### this code enables 'function method' behaviour
     my $set = $self->clone;
     $set->{set} = $result;
-    undef $self->{next};
     return $set;
 }
 
@@ -193,14 +53,34 @@ sub set_time_zone {
         sub {
             my %tmp = %{ $_[0]->{list}[0] };
             $tmp{a} = $tmp{a}->clone->set_time_zone( $tz ) if ref $tmp{a};
-            $tmp{b} = $tmp{a};  # ->clone->set_time_zone( $tz ) if ref $tmp{b};
+            $tmp{b} = $tmp{a};  
             \%tmp;
         }
     );
 
     ### this code enables 'subroutine method' behaviour
     $self->{set} = $result;
-    undef $self->{next};
+    return $self;
+}
+
+sub set {
+    my $self = shift;
+    my %args = validate( @_,
+                         { locale => { type => SCALAR | OBJECT,
+                                       default => undef },
+                         }
+                       );
+
+    my $result = $self->{set}->iterate(
+        sub {
+            my %tmp = %{ $_[0]->{list}[0] };
+            $tmp{a} = $tmp{a}->clone->set( %args ) if ref $tmp{a};
+            $tmp{b} = $tmp{a};
+            \%tmp;
+        }
+    );
+
+    $self->{set} = $result;
     return $self;
 }
 
@@ -272,13 +152,8 @@ sub from_recurrence {
                 }
         }
 
-        $self->{next} =     $param{next};     
-        $self->{current} =  $param{current}; 
-        $self->{previous} = $param{previous};
-
         $self->{set} = 
-            Set::Infinite::_recurrence->new( NEG_INFINITY, INFINITY )->
-            _recurrence(
+            $forever->_recurrence(
                 $param{next}, 
                 $param{current},
                 $param{previous} 
@@ -438,9 +313,9 @@ sub next {
 
     if ( @_ ) 
     {
-        if ( $self->{next} )
+        if ( $self->{set}->_is_recurrence )
         {
-            return $self->{next}->( $_[0] );
+            return $self->{set}->{param}[0]->( $_[0] );
         }
         else 
         {
@@ -463,9 +338,9 @@ sub previous {
 
     if ( @_ ) 
     {
-        if ( exists $self->{previous} ) 
+        if ( $self->{set}->_is_recurrence ) 
         {
-            return $self->{previous}->( $_[0] );
+            return $self->{set}->{param}[2]->( $_[0] );
         }
         else 
         {
@@ -486,9 +361,9 @@ sub current {
 
     return undef unless ref( $self->{set} );
 
-    if ( $self->{current} )
+    if ( $self->{set}->_is_recurrence )
     {
-        my $tmp = $self->{current}->( $_[0] );
+        my $tmp = $self->{set}->{param}[1]->( $_[0] );
         return $tmp if $tmp == $_[0];
         return $self->previous( $_[0] );
     }
@@ -540,57 +415,12 @@ sub as_list {
     return @result;
 }
 
-# Set::Infinite methods
-
-my $max_iterate = 20;
-
 sub intersection {
     my ($set1, $set2) = ( shift, shift );
     my $class = ref($set1);
     my $tmp = $class->empty_set();
     $set2 = $class->from_datetimes( dates => [ $set2, @_ ] ) 
         unless $set2->can( 'union' );
-
-    # optimization - use function composition if both sets are recurrences
-    if ( $set1->{next} && $set2->{next} ) 
-    {
-        # TODO: add tests
-
-        # warn "compose intersection";
-        return $class->from_recurrence(
-                  next =>  sub {
-                               # intersection of parent 'next' callbacks
-                               my ($next1, $next2);
-                               my $iterate = 0;
-                               $next2 = $set2->{next}->( $_[0] );
-                               while(1) { 
-                                   $next1 = $set1->{current}->( $next2 );
-                                   return $next1 if $next1 == $next2;
-                                   $next2 = $set2->{current}->( $next1 );
-                                   return if $iterate++ == $max_iterate;
-                               }
-                           },
-                  previous => sub {
-                               # intersection of parent 'previous' callbacks
-                               my $arg = $_[0];
-                               my ($tmp1, $previous1, $previous2);
-                               my $iterate = 0;
-                               while(1) { 
-                                   $previous1 = $set1->{previous}->( $arg );
-                                   $previous2 = $set2->{current}->( $previous1 ); 
-                                   return $previous1 if $previous1 == $previous2;
-
-                                   $previous2 = $set2->{previous}->( $arg ); 
-                                   $tmp1 = $set1->{current}->( $previous2 ); 
-                                   return $previous2 if $previous2 == $tmp1;
-
-                                   $arg = $previous1 < $previous2 ? $previous1 : $previous2;
-                                   return if $iterate++ == $max_iterate;
-                               }
-                           },
-               );
-    }
-
     $tmp->{set} = $set1->{set}->intersection( $set2->{set} );
     return $tmp;
 }
@@ -600,11 +430,11 @@ sub intersects {
     my $class = ref($set1);
     unless ( $set2->can( 'union' ) )
     {
-        if ( $set1->{next} )
+        if ( $set1->{set}->_is_recurrence )
         {
             for ( $set2, @_ )
             {
-                return 1 if $set1->{current}->( $_ ) == $_;
+                return 1 if $set1->{set}->{param}[1]->( $_ ) == $_;
             }
             return 0;
         }
@@ -618,11 +448,11 @@ sub contains {
     my $class = ref($set1);
     unless ( $set2->can( 'union' ) )
     {
-        if ( $set1->{next} )
+        if ( $set1->{set}->_is_recurrence )
         {
             for ( $set2, @_ ) 
             {
-                return 0 unless $set1->{current}->( $_ ) == $_;
+                return 0 unless $set1->{set}->{param}[1]->( $_ ) == $_;
             }
             return 1;
         }
@@ -637,26 +467,6 @@ sub union {
     my $tmp = $class->empty_set();
     $set2 = $class->from_datetimes( dates => [ $set2, @_ ] ) 
         unless $set2->can( 'union' );
-
-    if ( $set1->{next} && $set2->{next} )
-    {
-        # TODO: add tests
-
-        # warn "compose union";
-        return $class->from_recurrence(
-                  next =>  sub {
-                               my $next1 = $set1->{next}->( $_[0] );
-                               my $next2 = $set2->{next}->( $_[0] );
-                               return $next1 < $next2 ? $next1 : $next2;
-                           },
-                  previous => sub {
-                               my $previous1 = $set1->{previous}->( $_[0] );
-                               my $previous2 = $set2->{previous}->( $_[0] ); 
-                               return $previous1 > $previous2 ? $previous1 : $previous2;
-                           },
-               );
-    }
-
     $tmp->{set} = $set1->{set}->union( $set2->{set} );
     bless $tmp, 'DateTime::SpanSet' 
         if $set2->isa('DateTime::Span') or $set2->isa('DateTime::SpanSet');
@@ -871,7 +681,7 @@ This object method returns a replica of the given object.
 =item * add_duration( $duration )
 
     $dtd = new DateTime::Duration( year => 1 );
-    $new_set = $set->add( duration => $dtd );
+    $new_set = $set->add_duration( $dtd );
 
 This method returns a new set which is the same as the existing set
 with the specified duration added to every element of the set.
@@ -904,6 +714,10 @@ If the old time zone was a floating time zone, then no adjustments to
 the local time are made, except to account for leap seconds.  If the
 new time zone is floating, then the I<UTC> time is adjusted in order
 to leave the local time untouched.
+
+=item * set( locale => .. )
+
+This method can be used to change the C<locale> of a date time set.
 
 =item * min / max
 
