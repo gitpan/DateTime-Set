@@ -5,6 +5,7 @@ Changes
 TODO
 README
 Build.PL
+Makefile.PL
 t/00load.t
 t/01sanity.t
 t/02immutable.t
@@ -29,5 +30,3 @@ lib/DateTime/SpanSet.pm
 lib/Set/Infinite/_recurrence.pm
 
 META.yml                                Module meta-data (added by MakeMaker)
-
-SIGNATURE    Added here by Module::Build
