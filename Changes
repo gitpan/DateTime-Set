@@ -1,5 +1,27 @@
 Changes for DateTime::Set
 
+0.09    2003-08-18
+- added DT::Set count() 
+- fixed DT::SpanSet duration()
+- methods that accepted a DT object, now accept a list of DT objects.
+  Suggested by Ben Bennet, I think.
+- added _callback_next - "previous-only recurrences"
+
+- optimizes intersection of recurrence with span
+
+- internal 'S::I' recurrence class
+
+- small fix in DT::Set clone()
+- DateTime::Set uses DateTime infinity constants; 
+  max and min now return DateTime::Infinite::Future/Past objects.
+
+- DateTime::Span uses DateTime infinity constants; 
+  max and min now return DateTime::Infinite::Future/Past objects.
+  Docs update to explain 'max()' value when a span is built using 'before'.
+
+- added method set_time_zone()
+- clone() is documented
+
 0.08     2003-05-30
 - recurrence set intersection uses 'current'
 - fixed a number of methods in DateTime::Span, including intersection,
