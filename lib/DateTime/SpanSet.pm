@@ -5,12 +5,13 @@
 package DateTime::SpanSet;
 
 use strict;
-
+use Carp;
 use Params::Validate qw( validate SCALAR BOOLEAN OBJECT CODEREF ARRAYREF );
 use Set::Infinite '0.44';
 $Set::Infinite::PRETTY_PRINT = 1;   # enable Set::Infinite debug
 
-use vars qw( @ISA $VERSION );
+use constant INFINITY     =>       100 ** 100 ** 100 ;
+use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
 sub from_spans {
     my $class = shift;
@@ -32,11 +33,42 @@ sub from_spans {
 *new = \&from_spans;
 
 sub from_set_and_duration {
-    die "from_set_and_duration() not implemented yet";
+    # die "from_set_and_duration() not implemented yet";
+    # set => $dt_set, days => 1
+    my $class = shift;
+    my %args = @_;
+    my $set = delete $args{set} || carp "from_set_and_duration needs a set parameter";
+    my $duration = delete $args{duration} ||
+                   new DateTime::Duration( %args );
+    my $end_set = $set->add_duration( $duration );
+    return $class->from_sets( start_set => $set, 
+                              end_set =>   $end_set );
 }
 
 sub from_sets {
-    die "from_sets() not implemented yet";
+    my $class = shift;
+    my %args = validate( @_,
+                         { start_set =>
+                           { can => 'union',
+                             optional => 0,
+                           },
+                           end_set =>
+                           { can => 'union',
+                             optional => 0,
+                           },
+                         }
+                       );
+    my $self;
+    $self->{set} = $args{start_set}->{set}->until( 
+                   $args{end_set}->{set} );
+    bless $self, $class;
+    return $self;
+}
+
+sub empty_set {
+    my $class = shift;
+
+    return bless { set => Set::Infinite->new }, $class;
 }
 
 sub clone { 
@@ -137,8 +169,9 @@ sub span {
   return $set;
 }
 
-# returns a DateTime
-sub size { return $_[0]->{set}->size }
+# returns a DateTime::Duration
+sub duration { my $dur = $_[0]->{set}->size; defined $dur ? $dur : INFINITY }
+*size = \&duration;
 
 # unsupported Set::Infinite methods
 
@@ -221,15 +254,22 @@ defines a span like C<(-inf, $dt)>.
 If a starting date comes without an end date after it, then it defines
 a span like C<[$dt, inf)>.
 
+=item * empty_set
+
+Creates a new empty set.
+
 =item * min / max
 
-First or last dates in the set.
+First or last dates in the set.  These methods may return C<undef> if
+the set is empty.  It is also possible that these methods may return a
+scalar containing infinity or negative infinity.
 
-=item * size
+=item * duration
 
-The total size of the set, as a C<DateTime::Duration> object.
+The total size of the set, as a C<DateTime::Duration> object, or as a
+scalar containing infinity.
 
-This is the sum of the durations of all spans.
+Also available as C<size()>.
 
 =item * span
 
@@ -237,7 +277,9 @@ The total span of the set, as a C<DateTime::Span> object.
 
 =item * union / intersection / complement
 
-These set operations return the resulting SpanSet.
+Set operations may be performed not only with C<DateTime::SpanSet>
+objects, but also with C<DateTime::Set> and C<DateTime::Span> objects.
+These set operations always return a C<DateTime::SpanSet> object.
 
     $set = $set1->union( $set2 );         # like "OR", "insert", "both"
     $set = $set1->complement( $set2 );    # like "delete", "remove"
@@ -267,7 +309,6 @@ iterator.  Obviously, if a span set is specified as a recurrence and
 has no fixed end, then it may never stop returning spans.  User
 beware!
 
-
 =head1 SUPPORT
 
 Support is offered through the C<datetime@perl.org> mailing list.
@@ -293,10 +334,8 @@ included with this module.
 
 Set::Infinite
 
-L<http://datetime.perl.org>.
-
 For details on the Perl DateTime Suite project please see
-L<http://perl-date-time.sf.net>.
+L<http://datetime.perl.org>.
 
 =cut
 

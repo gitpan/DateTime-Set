@@ -8,12 +8,12 @@ use strict;
 use Carp;
 use Params::Validate qw( validate SCALAR BOOLEAN OBJECT CODEREF ARRAYREF );
 use DateTime::Span;
-use Set::Infinite '0.44_04';
+use Set::Infinite 0.45;   # 0.44_04 would be ok, but it is a devel version
 $Set::Infinite::PRETTY_PRINT = 1;   # enable Set::Infinite debug
 
-use vars qw( @ISA $VERSION );
+use vars qw( $VERSION );
 
-$VERSION = '0.00_20';
+$VERSION = '0.01';
 
 use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
@@ -64,69 +64,13 @@ sub add_duration {
     return $set;
 }
 
-# note: the constructor must clone its DateTime parameters, such that
+# note: the constructors must clone its DateTime parameters, such that
 # the set elements become immutable
+
 sub new {
     my $class = shift;
-    carp "new( \%param ) is deprecated. Use from_recurrence() / from_datetimes() instead,"
-        if @_;
-    my %args = validate( @_,
-                         { start =>
-                           { type => OBJECT,
-                             optional => 1,
-                           },
-                           end =>
-                           { type => OBJECT,
-                             optional => 1,
-                           },
-                           recurrence =>      # "next" alias 
-                           { type => CODEREF,
-                             optional => 1,
-                           },
-                           next =>
-                           { type => CODEREF,
-                             optional => 1,
-                           },
-                           previous =>
-                           { type => CODEREF,
-                             optional => 1,
-                           },
-                           dates => 
-                           { type => ARRAYREF,
-                             optional => 1,
-                           },
-                         }
-                       );
-    my $self = {};
-
-    $args{next} = $args{recurrence} if exists $args{recurrence};
-
-    if (exists $args{dates}) {
-        $self->{set} = Set::Infinite->new;
-        # warn "new: inserting @{ $args{dates} }";
-        for( @{ $args{dates} } ) {
-            # warn "new: inserting ".$_->ymd;
-            $self->{set} = $self->{set}->union( $_->clone );
-        }
-    }
-    elsif (exists $args{next}) {
-        # Set::Infinity->iterate() builds a "set-function" with a callback:
-        my $start = ( exists $args{start} ) ? $args{start} : NEG_INFINITY;
-        my $end =   ( exists $args{end} )   ? $args{end}   : INFINITY;
-        $start = $start->clone if ref($start);
-        $end =   $end->clone   if ref($end);
-        my $tmp_set = Set::Infinite->new( $start, $end );
-        $self->{set} = _recurrence_callback( $tmp_set, $args{next} );  
-    }
-    elsif (exists $args{previous}) {
-        die '"previous =>" argument not implemented';
-    }
-    else {
-        # no arguments => return an empty set (or should die?)
-        $self->{set} = Set::Infinite->new;
-    }
-    bless $self, $class;
-    return $self;
+    carp "new is deprecated" if @_;
+    $class->empty_set;
 }
 
 sub from_recurrence {
@@ -314,7 +258,9 @@ sub _setup_finite_recurrence {
     my $min = $set->min;
     return unless defined $min;
 
-    $min = $min->clone->subtract( seconds => 1 );
+    # start at 'less-than-min', because next(min) would return 
+    # 'bigger-than-min', and we want 'bigger-or-equal-to-min'
+    $min = $min->clone->subtract( nanoseconds => 1 );
 
     my $max = $set->max;
     # warn "_recurrence_callback called with ".$min->ymd."..".$max->ymd;
@@ -500,7 +446,7 @@ __END__
 
 =head1 NAME
 
-DateTime::Set - Date/time sets math
+DateTime::Set - Datetime sets and set math
 
 =head1 SYNOPSIS
 
@@ -551,11 +497,11 @@ people in our family.
 
 The second type of set that it can handle is one based on the idea of
 a recurrence, such as "every Wednesday", or "noon on the 15th day of
-every month".  This type of set can be have a fixed start and end
-datetime, but neither is required.  So our "every Wednesday set" could
-be "every Wednesday from the beginning of time until the end of time",
-or "every Wednesday after 2003-03-05 until the end of time", or "every
-Wednesday between 2003-03-05 and 2004-01-07".
+every month".  This type of set can have fixed starting and ending
+datetimes, but neither is required.  So our "every Wednesday set"
+could be "every Wednesday from the beginning of time until the end of
+time", or "every Wednesday after 2003-03-05 until the end of time", or
+"every Wednesday between 2003-03-05 and 2004-01-07".
 
 =head1 METHODS
 
@@ -580,10 +526,9 @@ Creates a new set specified via a "recurrence" callback.
 
 The C<span> parameter is optional. It must be a C<DateTime::Span> object.
 
-The span can also be specified using 
-C<begin> / C<after> and C<end> / C<before> DateTime objects, 
-as in the C<DateTime::Span> constructor. 
-In this case, if there is a C<span> parameter it will be ignored.
+The span can also be specified using C<begin> / C<after> and C<before>
+/ C<end> parameters, as in the C<DateTime::Span> constructor.  In this
+case, if there is a C<span> parameter it will be ignored.
 
     $months = DateTime::Set->from_recurrence(
         after => $dt_now,
@@ -591,6 +536,28 @@ In this case, if there is a C<span> parameter it will be ignored.
             $_[0]->truncate( to => 'month' )->add( months => 1 )
         },
     );
+
+The recurrence will be passed a single parameter, a DateTime.pm
+object.  The recurrence must generate the I<next> event before or
+after that object.  There is no guarantee as to what the object will
+be set to, only that it will be greater or lesser than the last object
+passed to the recurrence.
+
+For example, if you wanted a recurrence that generated datetimes in
+increments of 30 seconds would look like this:
+
+  sub every_30_seconds {
+      my $dt = shift;
+
+      if ( $dt->second < 30 ) {
+          $dt->add( seconds => 30 - $dt->second );
+      } else {
+          $dt->add( seconds => 60 - $dt->second );
+      }
+  }
+
+Of course, this recurrence ignores leap seconds, but we'll leave that
+as an exercise for the reader ;)
 
 =item * empty_set
 
@@ -608,8 +575,7 @@ with the specified duration added to every element of the set.
 
     $meetings_2004 = $meetings_2003->add( years => 1 );
 
-This method creates a new C<DateTime::Duration> object based on the
-parameters given and passes it to the C<add_duration()> method.
+This method is syntactic sugar around the C<add_duration()> method.
 
 =item * subtract_duration( $duration_object )
 
@@ -625,13 +591,14 @@ method.
 =item * min / max
 
 The first and last dates in the set.  These methods may return
-C<undef> if the set is empty.
+C<undef> if the set is empty.  It is also possible that these methods
+may return a scalar containing infinity or negative infinity.
 
 =item * span
 
 Returns the total span of the set, as a C<DateTime::Span> object.
 
-=item * iterator / next
+=item * iterator / next / previous
 
 These methods can be used to iterate over the dates in a set.
 
@@ -657,18 +624,19 @@ return value for empty sets!
 
 =item * union / intersection / complement
 
-Set operations.
+Set operations may be performed not only with C<DateTime::Set>
+objects, but also with C<DateTime::Span> and C<DateTime::SpanSet>
+objects.
 
     $set = $set1->union( $set2 );         # like "OR", "insert", "both"
     $set = $set1->complement( $set2 );    # like "delete", "remove"
     $set = $set1->intersection( $set2 );  # like "AND", "while"
     $set = $set1->complement;             # like "NOT", "negate", "invert"
 
-The C<union> 
-with a C<DateTime::Span> or a C<DateTime::SpanSet> object
-returns a C<DateTime::SpanSet> object.
+The C<union> of a C<DateTime::Set> with a C<DateTime::Span> or a
+C<DateTime::SpanSet> object returns a C<DateTime::SpanSet> object.
 
-All other operations always return a C<DateTime::Set>.
+All other operations will always return a C<DateTime::Set>.
 
 =item * intersects / contains
 
@@ -704,10 +672,8 @@ included with this module.
 
 Set::Infinite
 
-L<http://datetime.perl.org>.
-
 For details on the Perl DateTime Suite project please see
-L<http://perl-date-time.sf.net>.
+L<http://datetime.perl.org>.
 
 =cut
 
