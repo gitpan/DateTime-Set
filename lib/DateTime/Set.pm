@@ -64,19 +64,20 @@ sub _recurrence {
     }
     return $set->new( $min ) if $min == $max;
 
+    my $result;
     if ($min != NEG_INFINITY && $max != INFINITY) 
     {
         # print STDERR " finite \n";
 
-        my $result = $set->new();
-        my $next = $min;
-        while(1) 
+        $result = $set->new();
+        for ( 1 .. 200 ) 
         {
-            last if $next > $max;
-            push @{ $result->{list} }, { a => $next, b => $next };
-            $next = $callback_next->( $next->clone );
+            return $result if $min > $max;
+            push @{ $result->{list} }, { a => $min, b => $min };
+            $min = $callback_next->( $min->clone );
         } 
-        return $result;
+        return $result if $min > $max;
+        # warn "BIG set";
     }
 
     # return a "_function", such that we can backtrack later.
@@ -120,6 +121,7 @@ sub _recurrence {
                   _function( '_recurrence', @_ )
         ];
     }
+    return $func->_function2( 'union', $result ) if $result;
     return $func;
 }
 
@@ -151,7 +153,7 @@ use Params::Validate qw( validate SCALAR BOOLEAN OBJECT CODEREF ARRAYREF );
 use DateTime 0.12;  # this is for version checking only
 use DateTime::Duration;
 use DateTime::Span;
-use Set::Infinite 0.49;  
+use Set::Infinite 0.50;  
 
 use vars qw( $VERSION $neg_nanosecond );
 
@@ -159,7 +161,7 @@ use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
 BEGIN {
-    $VERSION = '0.09';
+    $VERSION = '0.10';
     $neg_nanosecond = DateTime::Duration->new( nanoseconds => -1 );
 }
 
@@ -308,7 +310,7 @@ sub clone {
 }
 
 # default callback that returns the 
-# "current" value in a callback recurrence.
+# "current" value (greater or equal) in a callback recurrence.
 # Does not change $_[0]
 #
 sub _callback_current {
@@ -492,7 +494,7 @@ sub closest {
 
 
 sub as_list {
-    my ($self) = shift;
+    my $self = shift;
     return undef unless ref( $self->{set} );
 
     my %args = @_;
@@ -541,19 +543,13 @@ sub intersection {
         return $class->from_recurrence(
                   next =>  sub {
                                # intersection of parent 'next' callbacks
-                               my $arg = shift;
-                               my ($tmp1, $next1, $next2);
+                               my ($next1, $next2);
                                my $iterate = 0;
+                               $next2 = $set2->{next}->( $_[0]->clone );
                                while(1) { 
-                                   $next1 = $set1->{next}->( $arg->clone );
-                                   $next2 = $set2->{current}->( $next1 );
+                                   $next1 = $set1->{current}->( $next2 );
                                    return $next1 if $next1 == $next2;
-                            
-                                   $next2 = $set2->{next}->( $arg );
-                                   $tmp1 = $set1->{current}->( $next2 );  
-                                   return $next2 if $next2 == $tmp1;
-                                  
-                                   $arg = $next1 > $next2 ? $next1 : $next2;
+                                   $next2 = $set2->{current}->( $next1 );
                                    return if $iterate++ == $max_iterate;
                                }
                            },
@@ -701,13 +697,9 @@ sub count {
 
     my $set = $self->clone;
     $set = $set->intersection( $span ) if $span;
+    return undef if $set->{set}->is_too_complex;
     return $set->{set}->count;
 }
-
-# unsupported Set::Infinite methods
-# sub size { die "size() not supported - would be zero!"; }
-# sub offset { die "offset() not supported"; }
-# sub quantize { die "quantize() not supported"; }
 
 1;
 
@@ -922,11 +914,14 @@ Returns a list of C<DateTime> objects.
   my @dt = $set->as_list( span => $span );
 
 Just as with the C<iterator()> method, the C<as_list()> method can be
-limited by a span.  If a set is specified as a recurrence and has no
+limited by a span.  
+
+If a set is specified as a recurrence and has no
 fixed begin and end datetimes, then C<as_list> will return C<undef>
 unless you limit it with a span.  Please note that this is explicitly
 not an empty list, since an empty list is a valid return value for
 empty sets!
+
 
 =item * count
 
@@ -935,9 +930,14 @@ Returns a count of C<DateTime> objects in the set.
   my $n = $set->count( span => $span );
 
 Just as with the C<iterator()> method, the C<count()> method can be
-limited by a span.  If a set is specified as a recurrence and has no
-fixed begin and end datetimes, then C<count> will return the C<infinity>
-scalar, unless you limit it with a span.
+limited by a span.  
+
+If a set is specified as a recurrence and has no
+fixed begin and end datetimes, then C<count> will return C<undef>,
+unless you limit it with a span. Please note that this is explicitly
+not a scalar C<zero>, since a zero count is a valid return value for
+empty sets!
+
 
 =item * union / intersection / complement
 
