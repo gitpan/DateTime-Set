@@ -16,7 +16,7 @@ use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
 BEGIN {
-    $VERSION = '0.19';
+    $VERSION = '0.19_01';
 }
 
 
@@ -867,10 +867,13 @@ This method can be used to change the C<locale> of a datetime set.
 
 =item * max
 
-The first and last datetimes in the set.  These methods may return
+The first and last C<DateTime> in the set.  These methods may return
 C<undef> if the set is empty.  It is also possible that these methods
 may return a C<DateTime::Infinite::Past> or C<DateTime::Infinite::Future> 
 object.
+
+These methods return just a I<copy> of the actual boundary value.
+If you modify the result, the set will not be modified.
 
 =item * span
 
@@ -941,15 +944,18 @@ If you I<really> need to extract elements from a large set, you can:
 Returns a count of C<DateTime> objects in the set.
 
   my $n = $set->count( span => $span );
-
+  die "can't count" unless defined $n;
+  
+  defined( my $n = $set->count) or die "can't count";
+  
 Just as with the C<iterator()> method, the C<count()> method can be
 limited by a span.  
 
 Applying C<count()> to a large recurrence set is a very expensive operation, 
 both in CPU time and in the memory used.
 
-For this reason, when C<count()> operates on large recurrence sets, it will return
-at most approximately C<200>. For larger sets, and for I<infinite> sets,
+For this reason, when C<count()> operates on large recurrence sets, it will 
+return at most approximately C<200>. For larger sets, and for I<infinite> sets,
 C<count()> will return C<undef>.
 
 Please note that this is explicitly not a scalar zero, since a zero count
