@@ -1,12 +1,12 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         DateTime-Set
-version:      0.1203
+version:      0.13
 version_from: lib/DateTime/Set.pm
 installdirs:  site
 requires:
     DateTime:                      0.12
-    Set::Infinite:                 0.5307
+    Set::Infinite:                 0.54
     Test::More:                    0
 
 distribution_type: module

@@ -11,12 +11,11 @@ use DateTime::SpanSet;
 
 use Carp;
 use Params::Validate qw( validate SCALAR BOOLEAN OBJECT CODEREF ARRAYREF );
-
-# use Set::Infinite '0.44';
-# $Set::Infinite::PRETTY_PRINT = 1;   # enable Set::Infinite debug
+use vars qw( $VERSION );
 
 use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
+$VERSION = $DateTime::Set::VERSION;
 
 sub set_time_zone {
     my ( $self, $tz ) = @_;
@@ -65,7 +64,7 @@ sub from_set_and_duration {
     my $set = delete $args{set} || carp "from_set_and_duration needs a set parameter";
     my $duration = delete $args{duration} ||
                    new DateTime::Duration( %args );
-    my $end_set = $set->add_duration( $duration );
+    my $end_set = $set->clone->add_duration( $duration );
     return $class->from_sets( start_set => $set, 
                               end_set =>   $end_set );
 }
@@ -122,7 +121,19 @@ sub next {
 
     # TODO: this is fixing an error from elsewhere
     # - find out what's going on! (with "sunset.pl")
-    return undef unless defined $self->{set};
+    return undef unless ref $self->{set};
+
+    if ( @_ )
+    {
+        my $max = $_[0];
+        my $open_end = 0;
+        ( $max, $open_end ) = $max->{set}->max_a if UNIVERSAL::can( $max, 'union' );
+        my $span;
+        $span = $open_end ?
+                DateTime::Span->from_datetimes( start => $max ) :
+                DateTime::Span->from_datetimes( after => $max );
+        return $self->intersection( $span )->next;
+    }
 
     my ($head, $tail) = $self->{set}->first;
     $self->{set} = $tail;
@@ -138,7 +149,19 @@ sub next {
 sub previous {
     my ($self) = shift;
 
-    return undef unless defined $self->{set};
+    return undef unless ref $self->{set};
+
+    if ( @_ )
+    {
+        my $min = $_[0];
+        my $open_start = 0;
+        ( $min, $open_start ) = $min->{set}->min_a if UNIVERSAL::can( $min, 'union' );
+        my $span;
+        $span = $open_start ?
+                DateTime::Span->from_datetimes( end => $min ) :
+                DateTime::Span->from_datetimes( before => $min );
+        return $self->intersection( $span )->previous;
+    }
 
     my ($head, $tail) = $self->{set}->last;
     $self->{set} = $tail;
@@ -148,6 +171,36 @@ sub previous {
     };
     bless $return, 'DateTime::Span';
     return $return;
+}
+
+sub as_list {
+    my $self = shift;
+    return undef unless ref( $self->{set} );
+
+    my %args = @_;
+    my $span;
+    $span = delete $args{span};
+    $span = DateTime::Span->new( %args ) if %args;
+
+    my $set = $self->clone;
+    $set = $set->intersection( $span ) if $span;
+
+    # Note: removing this line means we may end up in an infinite loop!
+    return undef if $set->{set}->is_too_complex;  # undef = no begin/end
+
+    # return if $set->{set}->is_null;  # nothing = empty
+    my @result;
+    # we should extract _copies_ of the set elements,
+    # such that the user can't modify the set indirectly
+
+    my $iter = $set->iterator;
+    while ( my $dt = $iter->next )
+    {
+        push @result, $dt
+            if ref( $dt );   # we don't want to return INFINITY value
+    };
+
+    return @result;
 }
 
 # Set::Infinite methods
@@ -212,14 +265,18 @@ sub max {
 
 # returns a DateTime::Span
 sub span { 
-  my $set = $_[0]->{set}->span;
-  my $self = { set => $set };
-  bless $self, 'DateTime::Span';
-  return $set;
+    my $set = $_[0]->{set}->span;
+    my $self = { set => $set };
+    bless $self, 'DateTime::Span';
+    return $set;
 }
 
 # returns a DateTime::Duration
-sub duration { my $dur = $_[0]->{set}->size; defined $dur ? $dur : INFINITY }
+sub duration { 
+    my $dur; 
+    eval { $dur = $_[0]->{set}->size };
+    defined $dur ? $dur : INFINITY 
+}
 *size = \&duration;
 
 1;
@@ -338,6 +395,34 @@ Also available as C<size()>.
 =item * span
 
 The total span of the set, as a C<DateTime::Span> object.
+
+=item * previous / next 
+
+These methods are used to find a span in the set, relative to a given
+datetime or span.
+
+  my $span = $set->next( $dt );
+
+  my $span = $set->previous( $dt );
+
+The return value may be C<undef> if there is no matching
+span in the set.
+
+
+=item * as_list
+
+Returns a list of C<DateTime::Span> objects.
+
+  my @dt = $set->as_list( span => $span );
+
+Just as with the C<iterator()> method, the C<as_list()> method can be
+limited by a span.
+
+If a set is specified as a recurrence and has no
+fixed begin and end datetimes, then C<as_list> will return C<undef>
+unless you limit it with a span.  Please note that this is explicitly
+not an empty list, since an empty list is a valid return value for
+empty sets!
 
 =item * union / intersection / complement
 

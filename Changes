@@ -1,5 +1,19 @@
 Changes for DateTime::Set
 
+0.13   2003-10-20
+0.1205  2003-10-16
+- requires Set::Infinite 0.54 (it is the "published" version of 0.5307)
+- DateTime::Set add_duration mutates the set. This is more compatible
+  with the way the DateTime.pm API works.
+- new DateTime::SpanSet methods:
+  as_list( $span_spec ), next( $dt|$span ), previous( $dt|$span )
+
+0.1204  2003-10-10
+- DateTime::SpanSet and DateTime::Span inherit DateTime::Set $VERSION
+- Trying to subtract infinity from a datetime is not fatal in duration()
+  Bug report by Dan Kubb.
+- new method 'iterate'
+- requires Set::Infinite 0.5307 (pass new backtracking tests)
 - added more tests for add_duration, subtract_duration
 - added set( locale => .. ) to DateTime::Set
 

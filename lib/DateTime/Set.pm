@@ -7,7 +7,7 @@ use Params::Validate qw( validate SCALAR BOOLEAN OBJECT CODEREF ARRAYREF );
 use DateTime 0.12;  # this is for version checking only
 use DateTime::Duration;
 use DateTime::Span;
-use Set::Infinite 0.5307;
+use Set::Infinite 0.54;
 use Set::Infinite::_recurrence;
 
 use vars qw( $VERSION $neg_nanosecond $forever );
@@ -16,11 +16,22 @@ use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
 BEGIN {
-    $VERSION = '0.1203';
+    $VERSION = '0.13';
     $neg_nanosecond = DateTime::Duration->new( nanoseconds => -1 );
 }
 
 $forever = Set::Infinite::_recurrence->new( NEG_INFINITY, INFINITY );
+
+sub iterate {
+    my ( $self, $callback ) = @_;
+    $self->{set} = $self->{set}->iterate( 
+        sub {
+            my $min = $_[0]->min;
+            $callback->( $min->clone ) if ref($min);
+        }
+    );
+    $self;
+}
 
 sub add { shift->add_duration( DateTime::Duration->new(@_) ) }
 
@@ -30,37 +41,17 @@ sub subtract_duration { return $_[0]->add_duration( $_[1]->inverse ) }
 
 sub add_duration {
     my ( $self, $dur ) = @_;
-
     $dur = $dur->clone;  # $dur must be "immutable"
-    my $result = $self->{set}->iterate( 
-        sub {
-            my $min = $_[0]->min;
-            return $min + $dur if ref($min);
-            $min;
-        }
+    $self->iterate(
+        sub { $_[0]->add_duration( $dur ) }
     );
-
-    ### this code enables 'function method' behaviour
-    my $set = $self->clone;
-    $set->{set} = $result;
-    return $set;
 }
 
 sub set_time_zone {
     my ( $self, $tz ) = @_;
-
-    my $result = $self->{set}->iterate( 
-        sub {
-            my %tmp = %{ $_[0]->{list}[0] };
-            $tmp{a} = $tmp{a}->clone->set_time_zone( $tz ) if ref $tmp{a};
-            $tmp{b} = $tmp{a};  
-            \%tmp;
-        }
+    $self->iterate( 
+        sub { $_[0]->set_time_zone( $tz ) }
     );
-
-    ### this code enables 'subroutine method' behaviour
-    $self->{set} = $result;
-    return $self;
 }
 
 sub set {
@@ -70,18 +61,9 @@ sub set {
                                        default => undef },
                          }
                        );
-
-    my $result = $self->{set}->iterate(
-        sub {
-            my %tmp = %{ $_[0]->{list}[0] };
-            $tmp{a} = $tmp{a}->clone->set( %args ) if ref $tmp{a};
-            $tmp{b} = $tmp{a};
-            \%tmp;
-        }
+    $self->iterate( 
+        sub { $_[0]->set( %args ) }
     );
-
-    $self->{set} = $result;
-    return $self;
 }
 
 sub from_recurrence {
@@ -642,7 +624,7 @@ case, if there is a C<span> parameter it will be ignored.
 The recurrence will be passed a single parameter, a DateTime.pm
 object.  The recurrence must generate the I<next> event 
 after that object.  There is no guarantee as to what the object will
-be set to, only that it will be greater than the last object
+be set to, only that it will be greater than the object
 passed to the recurrence.
 
 For example, if you wanted a recurrence that generated datetimes in
@@ -674,29 +656,52 @@ time, and holidays.
 
 Creates a new empty set.
 
+    $set = DateTime::Set->empty_set;
+
 =item * clone
 
 This object method returns a replica of the given object.
 
+C<clone> is useful if you want to apply a transformation to a set,
+but you want to keep the previous value:
+
+    $set2 = $set1->clone;
+    $set2->add_duration( year => 1 );  # $set1 is unaltered
+
 =item * add_duration( $duration )
+
+This method adds the specified duration added to every element of the set.
 
     $dtd = new DateTime::Duration( year => 1 );
     $new_set = $set->add_duration( $dtd );
 
-This method returns a new set which is the same as the existing set
-with the specified duration added to every element of the set.
+The original set is modified. The method returns the set object.
+
+Note: The result of adding a duration to a given set element 
+is expected to be within the span of the
+C<previous> and the C<next> element in the original set.
+
+For example: given the set C<[ 2001, 2010, 2015 ]>,
+the add_duration result for the value C<2010> is expected to be
+within the span C<[ 2001 .. 2015 ]>.
+
+Note: API change - before version 0.1205, the object was not mutated.
+If you need to keep the original object, do a C<clone> operation 
+before calling C<add_duration>.
 
 =item * add
 
-    $meetings_2004 = $meetings_2003->add( years => 1 );
-
 This method is syntactic sugar around the C<add_duration()> method.
+
+    $meetings_2004 = $meetings_2003->add( years => 1 );
 
 =item * subtract_duration( $duration_object )
 
 When given a C<DateTime::Duration> object, this method simply calls
 C<invert()> on that object and passes that new duration to the
 C<add_duration> method.
+
+The original set is modified. The method returns the set object.
 
 =item * subtract( DateTime::Duration->new parameters )
 
@@ -715,9 +720,13 @@ the local time are made, except to account for leap seconds.  If the
 new time zone is floating, then the I<UTC> time is adjusted in order
 to leave the local time untouched.
 
+The original set C<time zone> is modified. The method returns the set object.
+
 =item * set( locale => .. )
 
 This method can be used to change the C<locale> of a date time set.
+
+The original set C<locale> is modified. The method returns the set object.
 
 =item * min / max
 
@@ -745,7 +754,7 @@ you can pass any parameters that would work for one of the
 C<DateTime::Span> class's constructors, and an object will be created
 for you.
 
-Obviously, if the span you specify does is not restricted both at the
+Obviously, if the span you specify is not restricted both at the
 start and end, then your iterator may iterate forever, depending on
 the nature of your set.  User beware!
 
@@ -754,7 +763,7 @@ are no more datetimes in the iterator.
 
 =item * as_list
 
-Returns a list of C<DateTime> objects.
+Returns the set elements as a list of C<DateTime> objects.
 
   my @dt = $set->as_list( span => $span );
 
@@ -817,12 +826,12 @@ a C<DateTime::Span>, or a C<DateTime::SpanSet> object as an argument.
 
 =item * previous / next / current / closest
 
+These methods are used to find a set member relative to a given
+datetime.
+
   my $dt = $set->next( $dt );
 
   my $dt = $set->previous( $dt );
-
-These methods are used to find a set member relative to a given
-datetime.
 
 The C<current()> method returns C<$dt> if $dt is an event, otherwise
 it returns the previous event.
@@ -832,6 +841,43 @@ it returns the closest event (previous or next).
 
 All of these methods may return C<undef> if there is no matching
 datetime in the set.
+
+=item * iterate
+
+I<Experimental method - subject to change.>
+
+This method apply a callback subroutine to all elements of a set.
+
+    sub callback {
+        $_[0]->add( hours => 1 );
+    }
+
+    # offset $set elements by one hour
+    $set->iterate( \&callback );  
+
+    # $set2 elements are one hour after $set elements, and
+    # $set is unchanged
+    $set2 = $set->clone->iterate( \&callback );  
+
+If the callback returns C<undef>, the datetime is removed from the set:
+
+    sub remove_sundays {
+        $_[0] unless $_[0]->day_of_week == 7;
+    }
+
+The callback can be used to postpone or anticipate
+events which collide with datetimes in another set:
+
+    sub after_holiday {
+        $_[0]->add( days => 1 ) while $holidays->contains( $_[0] );
+    }
+
+The callback return value is expected to be within the span of the 
+C<previous> and the C<next> element in the original set. 
+
+For example: given the set C<[ 2001, 2010, 2015 ]>, 
+the callback result for the value C<2010> is expected to be 
+within the span C<[ 2001 .. 2015 ]>.
 
 =back
 
