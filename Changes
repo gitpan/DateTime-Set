@@ -1,5 +1,9 @@
 Changes for DateTime::Set
 
+0.1202  2003-09-24
+- fixed set_time_zone and add_duration: 
+  was not clearing 'next' upon return, when arg was a recurrence.
+
 0.1201  2003-09-24
 - optimized contains() and intersects() when arg is a datetime
 - recurrence constructor always adds '->clone' to recurrence function 
