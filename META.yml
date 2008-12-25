@@ -1,13 +1,16 @@
-# http://module-build.sourceforge.net/META-spec.html
-#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
-name:         DateTime-Set
-version:      0.25
-version_from: lib/DateTime/Set.pm
-installdirs:  site
-requires:
+--- #YAML:1.0
+name:                DateTime-Set
+version:             0.26
+abstract:            DateTime set objects
+license:             ~
+author:              
+    - Flavio S. Glock <fglock@pucrs.br>
+generated_by:        ExtUtils::MakeMaker version 6.44
+distribution_type:   module
+requires:     
     DateTime:                      0.12
     Set::Infinite:                 0.59
     Test::More:                    0
-
-distribution_type: module
-generated_by: ExtUtils::MakeMaker version 6.17
+meta-spec:
+    url:     http://module-build.sourceforge.net/META-spec-v1.3.html
+    version: 1.3
