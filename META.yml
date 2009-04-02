@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                DateTime-Set
-version:             0.26
+version:             0.27
 abstract:            DateTime set objects
 license:             ~
 author:              
