@@ -16,7 +16,7 @@ use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
 BEGIN {
-    $VERSION = '0.27';
+    $VERSION = '0.28';
 }
 
 
@@ -488,7 +488,6 @@ sub closest {
     return $dt2;
 }
 
-
 sub as_list {
     my $self = shift;
     return undef unless ref( $self->{set} );
@@ -511,16 +510,22 @@ sub as_list {
            $set->min->is_infinite;
 
     my @result;
-    # we should extract _copies_ of the set elements,
-    # such that the user can't modify the set indirectly
-
-    my $iter = $set->iterator;
-    while ( my $dt = $iter->next ) 
-    {
-        push @result, $dt
-            if ref( $dt );   # we don't want to return INFINITY value
-    };
-
+    my $next = $self->min;
+    if ( $span ) {
+        my $next1 = $span->min;
+        $next = $next1 if $next1 && $next1 > $next;
+        $next = $self->current( $next );
+    }
+    my $last = $self->max;
+    if ( $span ) {
+        my $last1 = $span->max;
+        $last = $last1 if $last1 && $last1 < $last;
+    }
+    do {
+        push @result, $next if !$span || $span->contains($next);
+        $next = $self->next( $next );
+    }
+    while $next && $next <= $last;
     return @result;
 }
 
