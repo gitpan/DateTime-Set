@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               DateTime-Set
-version:            0.29
+version:            0.30
 abstract:           DateTime set objects
 author:
     - Flavio S. Glock <fglock@pucrs.br>
