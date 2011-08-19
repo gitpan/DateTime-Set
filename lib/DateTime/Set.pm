@@ -16,7 +16,7 @@ use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
 BEGIN {
-    $VERSION = '0.30';
+    $VERSION = '0.31';
 }
 
 
@@ -1135,7 +1135,7 @@ Please report bugs using rt.cpan.org
 
 =head1 AUTHOR
 
-Flavio Soibelmann Glock <fglock@pucrs.br>
+Flavio Soibelmann Glock <fglock@gmail.com>
 
 The API was developed together with Dave Rolsky and the DateTime
 Community.
