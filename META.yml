@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               DateTime-Set
-version:            0.33
+version:            0.3400
 abstract:           DateTime set objects
 author:
     - Flavio S. Glock <fglock@gmail.com>
@@ -14,6 +14,11 @@ requires:
     DateTime:       0.12
     Set::Infinite:  0.59
     Test::More:     0
+resources:
+    repository:
+        type:  git
+        url:   https://github.com/fglock/DateTime-Set.git
+        web:   https://github.com/fglock/DateTime-Set
 no_index:
     directory:
         - t
@@ -21,4 +26,4 @@ no_index:
 generated_by:       ExtUtils::MakeMaker version 6.56
 meta-spec:
     url:      http://module-build.sourceforge.net/META-spec-v1.4.html
-    version:  1.4
+    version:  2
